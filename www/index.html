@@ -66,6 +66,7 @@
         .badge-diagnosa { background: #2196f3; }
         .badge-selesai { background: var(--info); }
         .badge-ambil { background: var(--success); }
+        .history-type.langsung { background: var(--success); color: #fff; }
         .badge-batal { background: var(--danger); }
         .nota-header h2 { color: #333; font-size: 20px; margin-bottom: 5px; }
         .nota-slogan { font-size: 11px; color: var(--slogan-color); margin-top: 2px; font-style: italic; }
@@ -162,6 +163,7 @@
         <div class="type-btn" onclick="app.selectType('diagnosa')" id="btnDiagnosa"><span class="icon">🔍</span><span class="label">HASIL<br>DIAGNOSA</span></div>
         <div class="type-btn" onclick="app.selectType('selesai')" id="btnSelesai"><span class="icon">✅</span><span class="label">NOTA<br>SELESAI</span></div>
         <div class="type-btn" onclick="app.selectType('ambil')" id="btnAmbil"><span class="icon">📤</span><span class="label">NOTA<br>AMBIL</span></div>
+        <div class="type-btn" onclick="app.selectType('langsung')" id="btnLangsung" style="grid-column:1/-1;"><span class="icon">⚡</span><span class="label">NOTA SERVIS LANGSUNG<br><small>selesai &amp; langsung diambil</small></span></div>
     </div>
 
     <!-- FORM CARD -->
@@ -171,20 +173,20 @@
             <div class="form-group">
                 <label>Nama Pelanggan *</label>
                 <div class="input-with-button">
-                    <input type="text" id="nama" required>
+                    <input type="text" id="nama" autocapitalize="words" required>
                     <button type="button" class="btn-import" onclick="app.importContact()">📇</button>
                 </div>
                 <div class="validation-msg" id="namaError"></div>
                 <button type="button" class="btn-secondary btn-save-contact" onclick="app.saveContact()">📇 Simpan ke Kontak</button>
             </div>
             <div class="form-group">
-                <label>Nomor HP / WhatsApp *</label>
-                <input type="tel" id="nohp" placeholder="08xxxxxxxxxx" required oninput="app.cleanPhoneInput(this)" onblur="app.validatePhone()">
+                <label>Nomor HP / WhatsApp <small>(opsional)</small></label>
+                <input type="tel" id="nohp" placeholder="08xxxxxxxxxx" oninput="app.cleanPhoneInput(this)" onblur="app.validatePhone()">
                 <div class="validation-msg" id="phoneValidation">Format nomor tidak valid.</div>
             </div>
             <div class="row">
-                <div class="form-group"><label>Merek HP *</label><input type="text" id="merek" list="listMerek" required><datalist id="listMerek"><option>Samsung</option><option>iPhone</option><option>Xiaomi</option><option>OPPO</option><option>Vivo</option></datalist><div class="validation-msg" id="merekError"></div></div>
-                <div class="form-group"><label>Model *</label><input type="text" id="model" required><div class="validation-msg" id="modelError"></div></div>
+                <div class="form-group"><label>Merek HP *</label><input type="text" id="merek" list="listMerek" autocapitalize="words" required><datalist id="listMerek"><option>Samsung</option><option>iPhone</option><option>Xiaomi</option><option>OPPO</option><option>Vivo</option></datalist><div class="validation-msg" id="merekError"></div></div>
+                <div class="form-group"><label>Model *</label><input type="text" id="model" autocapitalize="words" required><div class="validation-msg" id="modelError"></div></div>
             </div>
             <div class="form-group"><label>Keluhan/Kerusakan *</label><textarea id="keluhan" rows="3" required></textarea><div class="validation-msg" id="keluhanError"></div></div>
             <div id="kelengkapanSection"><div class="form-group"><label>Kelengkapan yang Diserahkan</label><label class="checkbox-group"><input type="checkbox" value="SIM Card"> SIM Card</label><label class="checkbox-group"><input type="checkbox" value="Memory Card"> Memory Card</label><label class="checkbox-group"><input type="checkbox" value="Casing"> Casing</label><label class="checkbox-group"><input type="checkbox" value="Charger"> Charger</label><label class="checkbox-group"><input type="checkbox" value="Box"> Box/Dus</label></div></div>
@@ -204,12 +206,15 @@
                 <input type="text" id="passwordDeviceText" placeholder="Atau ketik manual (password / deskripsi pola)" style="margin-top:10px;">
             </div>
 
-            <div id="diagnosaSection" style="display:none;"><div class="form-group"><label>Hasil Pemeriksaan *</label><textarea id="hasilDiagnosa" rows="3"></textarea></div><div class="form-group"><label>Sparepart Diperlukan</label><input type="text" id="sparepart"></div><div class="form-group"><label>Status Perbaikan</label><select id="statusDiagnosa"><option value="bisa">✅ BISA DIPERBAIKI</option><option value="tidak">❌ TIDAK BISA</option><option value="pending">⏳ MENUNGGU KONFIRMASI</option></select></div></div>
-            <div id="selesaiSection" style="display:none;"><div class="form-group"><label>Detail Perbaikan *</label><textarea id="detailPerbaikan" rows="3"></textarea></div><div class="form-group"><label>Status Hasil</label><select id="statusSelesai"><option value="normal">✅ BERFUNGSI NORMAL</option><option value="partial">⚠️ BERFUNGSI SEBAGIAN</option><option value="tidak">❌ TIDAK BISA</option></select></div><div class="form-group"><label>Siap Diambil</label><input type="text" id="siapAmbil"></div></div>
+            <div id="diagnosaSection" style="display:none;"><div class="form-group"><label>Hasil Pemeriksaan</label><textarea id="hasilDiagnosa" rows="3"></textarea></div><div class="form-group"><label>Sparepart Diperlukan</label><input type="text" id="sparepart"></div><div class="form-group"><label>Status Perbaikan</label><select id="statusDiagnosa"><option value="bisa">✅ BISA DIPERBAIKI</option><option value="tidak">❌ TIDAK BISA</option><option value="pending">⏳ MENUNGGU KONFIRMASI</option></select></div></div>
+            <div id="selesaiSection" style="display:none;"><div class="form-group"><label>Detail Perbaikan</label><textarea id="detailPerbaikan" rows="3"></textarea></div><div class="form-group"><label>Status Hasil</label><select id="statusSelesai"><option value="normal">✅ BERFUNGSI NORMAL</option><option value="partial">⚠️ BERFUNGSI SEBAGIAN</option><option value="tidak">❌ TIDAK BISA</option></select></div><div class="form-group"><label>Siap Diambil</label><input type="text" id="siapAmbil"></div></div>
             <div id="ambilSection" style="display:none;"><div class="form-group"><label>Status Pengambilan</label><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><div class="status-option active" onclick="app.selectAmbilStatus('diambil')" id="statusDiambil">✅ DIAMBIL</div><div class="status-option" onclick="app.selectAmbilStatus('batal')" id="statusBatal">❌ DIBATALKAN</div></div></div><div id="alasanBatalGroup" style="display:none;"><div class="form-group"><label>Alasan</label><select id="alasanBatal"><option value="Tidak bisa diperbaiki">Tidak bisa diperbaiki</option><option value="Biaya mahal">Biaya mahal</option><option value="Sparepart tidak ada">Sparepart tidak ada</option><option value="Pelanggan membatalkan">Pelanggan membatalkan</option></select></div></div></div>
+            <div id="langsungSection" style="display:none;"><div class="form-group"><label>Detail Perbaikan</label><textarea id="detailLangsung" rows="3" placeholder="Contoh: Ganti LCD, tes touch &amp; warna normal"></textarea></div><div class="form-group"><label>Sparepart Diganti</label><input type="text" id="sparepartLangsung" placeholder="Contoh: LCD original Samsung A12"></div><div class="form-group"><label>Garansi (hari)</label><input type="number" id="garansiLangsung" min="0" step="1" value="0"></div></div>
             <div class="row-3">
                 <div class="form-group"><label>Total Biaya (Rp)</label><input type="number" id="totalBiaya" min="0" step="1000" oninput="app.hitungSisa()"></div>
                 <div class="form-group"><label>DP / Panjar (Rp)</label><input type="number" id="dp" min="0" step="1000" oninput="app.hitungSisa()"></div>
+                <div class="form-group"><label>Modal Sparepart (Rp) <small>- untuk hitung laba</small></label><input type="number" id="modal" min="0" step="1000"></div>
+                <div class="form-group"><label>Metode Bayar</label><select id="metodeBayar"><option value="Tunai">Tunai</option><option value="Transfer">Transfer</option><option value="QRIS">QRIS</option></select></div>
                 <div class="form-group"><label>Sisa (Rp)</label><input type="text" id="sisa" readonly style="background:#f0f0f0;"></div>
             </div>
             <div class="form-group"><label>Estimasi Waktu</label><input type="text" id="estimasi" placeholder="1-2 hari"></div>
@@ -253,9 +258,11 @@
     <div class="history-card" id="historyCard">
         <div class="form-title">📋 Riwayat Service <button class="btn-icon" onclick="app.backToForm()" style="background:#f0f0f0;">✕</button></div>
         <div class="stats-grid"><div class="stat-card"><div class="stat-value" id="statTotal">0</div><div class="stat-label">Total Nota</div></div><div class="stat-card"><div class="stat-value" id="statBulanIni">0</div><div class="stat-label">Bulan Ini</div></div><div class="stat-card"><div class="stat-value" id="statSelesai">0</div><div class="stat-label">Selesai</div></div><div class="stat-card"><div class="stat-value" id="statPending">0</div><div class="stat-label">Pending</div></div></div>
-        <div><input type="text" id="searchHistory" placeholder="Cari nama, no hp, atau device..." oninput="app.renderHistory()" style="margin-bottom:10px;"><select id="filterType" onchange="app.renderHistory()"><option value="">Semua Status</option><option value="terima">Terima</option><option value="diagnosa">Diagnosa</option><option value="selesai">Selesai</option><option value="ambil">Ambil</option></select></div>
+        <div><input type="text" id="searchHistory" placeholder="Cari nama, no hp, atau device..." oninput="app.renderHistory()" style="margin-bottom:10px;"><select id="filterType" onchange="app.renderHistory()"><option value="">Semua Status</option><option value="terima">Terima</option><option value="diagnosa">Diagnosa</option><option value="selesai">Selesai</option><option value="langsung">langsung</option><option value="ambil">Ambil</option></select></div>
+        <div id="laporanBox" style="display:none; margin:12px 0;"></div>
         <div id="historyList" style="max-height:400px; overflow-y:auto;"></div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+            <button class="btn-secondary" onclick="app.showLaporan()">📈 Laporan Keuangan</button>
             <button class="btn-secondary" onclick="app.exportCSV()">📊 Export CSV</button>
             <button class="btn-secondary" onclick="app.exportJSON()">💾 Backup JSON</button>
             <button class="btn-secondary" onclick="app.backupToDrive()">☁️ Backup ke Google Drive</button>
