@@ -41,3 +41,17 @@ Fitur ini memakai extra `jid` yang tidak resmi didokumentasikan WhatsApp, jadi u
 ## Kolom wajib
 Hanya 4 kolom wajib: **Nama, Merek, Model, Keluhan**. Selain itu opsional (Nomor HP boleh kosong, tetapi jika diisi harus berformat 08xx; tanpa nomor, tombol WhatsApp dan simpan kontak tidak bisa dipakai).
 Nama, Merek, Model otomatis berhuruf kapital di awal kata (kata yang sudah memuat huruf besar seperti iPhone atau NFC tidak diubah).
+
+## Update aplikasi tanpa uninstall
+- `keystore/debug.keystore` adalah kunci tanda tangan **tetap**; workflow menyalinnya ke runner sebelum build, sehingga semua APK berikutnya bertanda tangan sama.
+- `versionCode` otomatis naik di setiap build (`scripts/patch-android.js`).
+- Hasilnya: APK baru bisa dipasang **di atas** versi lama dan data nota tetap ada. Syaratnya: file `keystore/debug.keystore` jangan diganti/dihapus dari repository.
+- Pemasangan pertama dengan kunci ini tetap memerlukan uninstall APK lama (kuncinya berbeda). **Backup dulu** lewat menu Backup di aplikasi, lalu Restore setelah pasang.
+- Sebaiknya repository dibuat **Private**, karena kunci ini ikut tersimpan di dalamnya.
+
+## Estimasi biaya di Diagnosa
+- Label biaya mengikuti tahap: **Estimasi Biaya** (Terima, Diagnosa) dan **Biaya Akhir** (Selesai, Ambil, Langsung), termasuk di preview, PDF, WhatsApp, dan cetak thermal.
+- Diagnosa punya kolom **Harga Sparepart** dan **Biaya Jasa**; total estimasi dihitung otomatis (masih bisa diubah manual).
+- Status baru **Disetujui Pelanggan** (tercatat di timeline).
+- Nota diagnosa memuat catatan "estimasi dapat berubah".
+- Saat membuat nota Selesai/Ambil dengan biaya berbeda dari estimasi diagnosa, muncul konfirmasi, dan estimasi awal ditampilkan di nota.
