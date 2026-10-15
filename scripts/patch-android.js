@@ -10,6 +10,8 @@ const permissions = [
   '<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />',
   '<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />',
   '<uses-permission android:name="android.permission.CAMERA" />',
+  '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />',
+  '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />',
   '<uses-permission android:name="android.permission.READ_CONTACTS" />',
   '<uses-permission android:name="android.permission.WRITE_CONTACTS" />'
 ];
@@ -19,6 +21,10 @@ if (missing.length) {
   x = x.replace('<application', missing.join('\n    ') + '\n    <application');
 }
 if (!x.includes('android.hardware.camera')) x = x.replace('<application', '<uses-feature android:name="android.hardware.camera" android:required="false" />\n    <application');
+// Photo picker (Google Play services) agar galeri langsung siap di Android < 13, sesuai dokumentasi @capacitor/camera.
+if (!x.includes('photopicker_activity:0:required') && x.includes('</application>')) {
+  x = x.replace('</application>', '    <service android:name="com.google.android.gms.metadata.ModuleDependencies" android:enabled="false" android:exported="false">\n            <intent-filter><action android:name="com.google.android.gms.metadata.MODULE_DEPENDENCIES" /></intent-filter>\n            <meta-data android:name="photopicker_activity:0:required" android:value="" />\n        </service>\n    </application>');
+}
 fs.writeFileSync(f, x);
 console.log('AndroidManifest.xml berhasil dipatch');
 
