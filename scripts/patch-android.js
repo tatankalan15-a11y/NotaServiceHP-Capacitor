@@ -51,3 +51,13 @@ if (!m.includes('com.whatsapp.w4b')) {
   fs.writeFileSync(f, m);
 }
 console.log('Plugin WhatsAppShare berhasil ditambahkan');
+
+// ---- versionCode otomatis naik tiap build (syarat Android agar APK bisa meng-update versi lama) ----
+const gradleFile = path.join(__dirname, '..', 'android/app/build.gradle');
+if (fs.existsSync(gradleFile)) {
+  let g = fs.readFileSync(gradleFile, 'utf8');
+  const code = Math.floor(Date.now() / 60000); // menit sejak 1970, selalu bertambah
+  g = g.replace(/versionCode\s+\d+/, 'versionCode ' + code).replace(/versionName\s+\"[^\"]*\"/, 'versionName "1.0.' + code + '"');
+  fs.writeFileSync(gradleFile, g);
+  console.log('versionCode =', code);
+}
