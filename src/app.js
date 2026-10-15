@@ -34,7 +34,9 @@ const WhatsAppShare = registerPlugin('WhatsAppShare');
 
         // Variabel Global
         let db, currentType = 'terima', currentStatus = 'diambil', currentNota = null;
-        let tokoSettings = {}, historyData = [], logoData = null;
+        let tokoSettings = {}, historyData = [], expenseData = [], logoData = null;
+        let paymentData = [], inventoryData = [], inventoryMoves = [], auditData = [];
+        const ADV_DB_STORES = ['pembayaran','inventori','mutasi_stok','audit'];
         let fotoDevicePath = null, fotoDeviceData = null;
         let footers = { terima:{text:'',enabled:false}, diagnosa:{text:'',enabled:false}, selesai:{text:'',enabled:false}, ambil:{text:'',enabled:false} };
         let klaimMode = false; let skText = "", autoWASelesai = false, autoWAAmbil = false, waNotifTemplate = "";
@@ -150,16 +152,16 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         // IndexedDB
         function initDB() {
             return new Promise((resolve, reject) => {
-                const r = indexedDB.open('NotaServiceDB', 8);
+                const r = indexedDB.open('NotaServiceDB', 11);
                 r.onerror = (e) => reject(e.target.error);
                 r.onsuccess = (e) => { db = e.target.result; resolve(db); };
-                r.onupgradeneeded = (e) => { const d = e.target.result; if (!d.objectStoreNames.contains('nota')) d.createObjectStore('nota', { keyPath: 'id' }); };
+                r.onupgradeneeded = (e) => { const d = e.target.result; if (!d.objectStoreNames.contains('nota')) d.createObjectStore('nota', { keyPath: 'id' }); if (!d.objectStoreNames.contains('pengeluaran')) d.createObjectStore('pengeluaran', { keyPath: 'id' }); if (!d.objectStoreNames.contains('pembayaran')) d.createObjectStore('pembayaran', { keyPath: 'id' }); if (!d.objectStoreNames.contains('inventori')) d.createObjectStore('inventori', { keyPath: 'id' }); if (!d.objectStoreNames.contains('mutasi_stok')) d.createObjectStore('mutasi_stok', { keyPath: 'id' }); if (!d.objectStoreNames.contains('audit')) d.createObjectStore('audit', { keyPath: 'id' }); };
             });
         }
         async function saveToDB(data) { if (!db) await initDB(); return new Promise((res, rej) => { const tx = db.transaction(['nota'], 'readwrite'), store = tx.objectStore('nota'), req = store.put(data); req.onsuccess = res; req.onerror = rej; }); }
         async function getAllFromDB() { if (!db) await initDB(); return new Promise((res, rej) => { const tx = db.transaction(['nota'], 'readonly'), store = tx.objectStore('nota'), req = store.getAll(); req.onsuccess = () => res(req.result); req.onerror = rej; }); }
-        async function saveToHistory(nota) { try { await saveToDB(nota); const i = historyData.findIndex(h => h.id === nota.id); if (i !== -1) historyData[i] = nota; else historyData.unshift(nota); } catch (e) { showToast('Gagal menyimpan nota!'); } }
-        async function loadHistory() { try { historyData = (await getAllFromDB()).map(sanitizeNota).filter(Boolean).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)); } catch (e) { historyData = []; } }
+        async function saveToHistory(nota) { try { await saveToDB(nota); const i = historyData.findIndex(h => h.id === nota.id); if (i !== -1) historyData[i] = nota; else historyData.unshift(nota); try { await auditLog('Simpan/perbarui nota', `${nota.notaId || nota.id} · ${nota.type || 'servis'} · ${nota.nama || ''}`); } catch (_) {} if (nota.type === 'jual' && nota.jual && Array.isArray(nota.jual.items)) { try { await consumeInventoryForSale(nota); } catch (stockErr) { showToast('Nota tersimpan, tetapi stok tidak berhasil diperbarui: ' + stockErr.message); } } else if (nota.type === 'selesai' || nota.type === 'langsung') { try { await consumeInventoryForService(nota); } catch (stockErr) { showToast('Servis tersimpan, tetapi stok tidak berhasil diperbarui: ' + stockErr.message); } } } catch (e) { showToast('Gagal menyimpan nota!'); } }
+        async function loadHistory() { try { historyData = (await getAllFromDB()).map(sanitizeNota).filter(Boolean).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)); } catch (e) { historyData = []; } try { expenseData = (await getAllExpenses()).map(sanitizeExpense).filter(Boolean); } catch (e) { expenseData = []; } try { paymentData = await getAllStore('pembayaran'); inventoryData = await getAllStore('inventori'); inventoryMoves = await getAllStore('mutasi_stok'); auditData = await getAllStore('audit'); } catch (e) { paymentData=[]; inventoryData=[]; inventoryMoves=[]; auditData=[]; } }
 
         function validateForm() {
             let v = true;
@@ -637,8 +639,8 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         function closeThermalPreview() { document.getElementById('thermalPreviewModal').classList.remove('active'); }
 
         async function backupToDrive() {
-            if (!historyData.length) { showToast('Tidak ada data untuk di-backup'); return; }
-            const data = { settings:tokoSettings, history:historyData.map(({passwordDevice, ...n}) => n), logo:logoData, footers, sk:skText, autoWASelesai, autoWAAmbil, waNotifTemplate, exported:new Date(), note: 'Data password/pola perangkat sengaja tidak disertakan demi keamanan.' };
+            if (!historyData.length && !expenseData.length) { showToast('Tidak ada data untuk di-backup'); return; }
+            const data = { settings:tokoSettings, history:historyData.map(({passwordDevice, ...n}) => n), logo:logoData, pengeluaran:expenseData, pembayaran:paymentData, inventori:inventoryData, audit:auditData, openingBalances:{cash:Number(localStorage.getItem('opening_cash')||0),transfer:Number(localStorage.getItem('opening_transfer')||0),qris:Number(localStorage.getItem('opening_qris')||0),other:Number(localStorage.getItem('opening_other')||0)}, footers, sk:skText, autoWASelesai, autoWAAmbil, waNotifTemplate, exported:new Date(), note: 'Data password/pola perangkat sengaja tidak disertakan demi keamanan.' };
             const json = JSON.stringify(data, null, 2), blob = new Blob([json], {type: 'application/json'});
             const file = new File([blob], `Backup_${new Date().toISOString().slice(0,10)}.json`, { type: 'application/json' });
             if (isCapacitor()) {
@@ -800,7 +802,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         }
         async function loadHistoryItem(id) { let n = historyData.find(h => h.id === id); if(n){ currentNota = n; currentType = n.type; renderPreview(); updateWorkflowButtons(); document.getElementById('historyCard').classList.remove('active'); document.getElementById('previewCard').classList.add('active'); } }
         function exportCSV() { if(!historyData.length) return; let csv = '\ufeffNo,ID,OriginalID,Tanggal,Jam,Tipe,Nama,NoHP,Device,Keluhan,Kondisi,TotalBiaya,DP,Sisa,Catatan\n'; historyData.forEach((h,i)=>{ csv += [i+1,csvCell(h.notaId),csvCell(h.originalId||h.id),csvCell(h.tanggal),csvCell(h.jam),csvCell(h.type),csvCell(h.nama),csvCell(h.nohp),csvCell(h.device),csvCell(h.keluhan),csvCell((h.kondisi||[]).join(';')),h.totalBiaya||0,h.dp||0,h.sisa||0,csvCell(h.catatan||'')].join(',') + '\n'; }); if (isCapacitor()) { shareFile(`Riwayat_${new Date().toISOString().slice(0,10)}.csv`, textToB64(csv), 'text/csv', 'Riwayat Nota').catch(e => showToast('Gagal: ' + e.message)); return; } let blob = new Blob([csv],{type:'text/csv;charset=utf-8;'}), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Riwayat_${new Date().toISOString().slice(0,10)}.csv`; a.click(); }
-        function exportJSON() { if (isCapacitor()) { return backupToDrive(); } let data = { settings:tokoSettings, history:historyData.map(({passwordDevice, ...n}) => n), logo:logoData, footers, sk:skText, autoWASelesai, autoWAAmbil, waNotifTemplate, exported:new Date(), note: 'Data password/pola perangkat sengaja tidak disertakan demi keamanan.' }; let json = JSON.stringify(data,null,2), blob = new Blob([json],{type:'application/json'}), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); }
+        function exportJSON() { if (isCapacitor()) { return backupToDrive(); } let data = { settings:tokoSettings, history:historyData.map(({passwordDevice, ...n}) => n), logo:logoData, pengeluaran:expenseData, pembayaran:paymentData, inventori:inventoryData, audit:auditData, openingBalances:{cash:Number(localStorage.getItem('opening_cash')||0),transfer:Number(localStorage.getItem('opening_transfer')||0),qris:Number(localStorage.getItem('opening_qris')||0),other:Number(localStorage.getItem('opening_other')||0)}, footers, sk:skText, autoWASelesai, autoWAAmbil, waNotifTemplate, exported:new Date(), note: 'Data password/pola perangkat sengaja tidak disertakan demi keamanan.' }; let json = JSON.stringify(data,null,2), blob = new Blob([json],{type:'application/json'}), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); localStorage.setItem('last_backup_at',new Date().toISOString()); }
         async function restoreData(e) {
             let f = e.target.files[0]; if(!f) return;
             if(!confirm('⚠️ Restore akan MENIMPA nota ber-ID sama dan menimpa pengaturan. Nota lain yang sudah ada tetap dipertahankan. Lanjutkan?')) { e.target.value=''; return; }
@@ -813,6 +815,12 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                     let notas = Array.isArray(d.history) ? d.history.map(sanitizeNota).filter(Boolean) : [];
                     if(Array.isArray(d.history) && d.history.length && !notas.length) throw new Error('Tidak ada nota valid di backup');
                     for(let n of notas) await saveToDB(n);
+                    let exps = Array.isArray(d.pengeluaran) ? d.pengeluaran.map(sanitizeExpense).filter(Boolean) : [];
+                    for(let x of exps) await saveExpense(x);
+                    for (const x of (Array.isArray(d.pembayaran) ? d.pembayaran : [])) if (validPayment(x)) await putStore('pembayaran', x);
+                    for (const x of (Array.isArray(d.inventori) ? d.inventori : [])) if (validInventory(x)) await putStore('inventori', x);
+                    for (const x of (Array.isArray(d.audit) ? d.audit : [])) if (x && x.id && x.action) await putStore('audit', x);
+                    if(d.openingBalances && typeof d.openingBalances === 'object') { for (const [src,dst] of [['cash','opening_cash'],['transfer','opening_transfer'],['qris','opening_qris'],['other','opening_other']]) if (Number.isFinite(Number(d.openingBalances[src]))) localStorage.setItem(dst,String(Math.max(0,Number(d.openingBalances[src])))); }
                     if(d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings)) { tokoSettings = {}; ['nama','slogan','alamat','telepon','primaryColor'].forEach(k => { if(typeof d.settings[k] === 'string') tokoSettings[k] = d.settings[k]; }); localStorage.setItem('toko_settings', JSON.stringify(tokoSettings)); }
                     if(d.logo) { if(isSafeImg(d.logo)) { logoData = d.logo; localStorage.setItem('toko_logo', logoData); } }
                     if(d.footers && typeof d.footers === 'object') { ['terima','diagnosa','selesai','ambil'].forEach(k => { const x = d.footers[k]; if(x && typeof x === 'object') footers[k] = { text: String(x.text||''), enabled: !!x.enabled }; }); localStorage.setItem('footers_settings', JSON.stringify(footers)); }
@@ -820,7 +828,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                     if(typeof d.autoWASelesai === 'boolean') { autoWASelesai = d.autoWASelesai; localStorage.setItem('auto_wa_selesai', autoWASelesai); }
                     if(typeof d.autoWAAmbil === 'boolean') { autoWAAmbil = d.autoWAAmbil; localStorage.setItem('auto_wa_ambil', autoWAAmbil); }
                     if(typeof d.waNotifTemplate === 'string') { waNotifTemplate = d.waNotifTemplate; localStorage.setItem('wa_notif_template', waNotifTemplate); }
-                    showToast(`Restore berhasil (${notas.length} nota), reload...`); setTimeout(()=>location.reload(),1200);
+                    showToast(`Restore berhasil (${notas.length} nota, ${exps.length} pengeluaran), reload...`); setTimeout(()=>location.reload(),1200);
                 } catch(err) { showToast('Gagal restore: ' + err.message); }
                 hideLoading(); e.target.value='';
             };
@@ -831,7 +839,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             if(!confirm('⚠️ Hapus semua data? Tidak bisa dikembalikan!')) return;
             if(historyData.length && confirm('Unduh backup dulu sebelum menghapus? (disarankan)')) { try { exportJSON(); } catch(e) {} }
             if(!confirm('Yakin hapus SEMUA data sekarang?')) return;
-            ['wa_template','wa_notif_template','auto_wa_selesai','auto_wa_ambil','nota_draft','printer_size','last_printer_id','footers_settings','auto_print','toko_settings','toko_logo','sk_text','dark_mode','mask_pwd'].forEach(k => localStorage.removeItem(k));
+            ['wa_template','wa_notif_template','auto_wa_selesai','auto_wa_ambil','nota_draft','printer_size','last_printer_id','footers_settings','auto_print','toko_settings','toko_logo','sk_text','dark_mode','mask_pwd','dp_batal_mode','opening_cash','opening_transfer','opening_qris','opening_other','last_backup_at','nota_cloud_config'].forEach(k => localStorage.removeItem(k));
             if(db) { db.close(); db = null; }
             const req = indexedDB.deleteDatabase('NotaServiceDB');
             const done = () => { showToast('Semua data dihapus'); setTimeout(()=>location.reload(),1000); };
@@ -872,7 +880,30 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         }
 
 
-        // ============ LAPORAN KEUANGAN (1 baris per servis) ============
+        // ============ PEMBUKUAN: LAPORAN, PENGELUARAN, ARUS KAS ============
+        const KAT_OPERASIONAL = ['Sewa Tempat', 'Listrik/Internet', 'Gaji/Upah', 'Transport', 'Pulsa/Alat Kerja', 'Lain-lain'];
+        const KAT_STOK = 'Beli Stok/Sparepart';
+        const METODE_LIST = ['Tunai', 'Transfer', 'QRIS'];
+        let lapMode = 'bulanan', lapVal = null;
+
+        function dKey(ts) { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+        function ymKey(ts) { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+        function defaultLapVal(mode) { const n = new Date(); return mode === 'harian' ? dKey(n) : mode === 'tahunan' ? String(n.getFullYear()) : ymKey(n); }
+        function inP(tgl) { return !!lapVal && (lapMode === 'harian' ? tgl === lapVal : String(tgl).startsWith(lapVal)); }
+        function rp(n) { n = Math.round(Number(n) || 0); return (n < 0 ? '-' : '') + 'Rp ' + formatRupiah(Math.abs(n)); }
+
+        // ---- Penyimpanan pengeluaran (IndexedDB, store 'pengeluaran') ----
+        function sanitizeExpense(x) {
+            if (!x || typeof x !== 'object') return null;
+            const jumlah = Math.round(Number(x.jumlah));
+            if (!x.id || !/^\d{4}-\d{2}-\d{2}$/.test(String(x.tanggal)) || !(jumlah > 0)) return null;
+            return { id: String(x.id).replace(/[^\w-]/g, ''), tanggal: String(x.tanggal), kategori: String(x.kategori || 'Lain-lain').slice(0, 40), ket: String(x.ket || '').slice(0, 200), jumlah, metode: METODE_LIST.includes(x.metode) ? x.metode : 'Tunai' };
+        }
+        async function getAllExpenses() { if (!db) await initDB(); return new Promise((res, rej) => { const req = db.transaction(['pengeluaran'], 'readonly').objectStore('pengeluaran').getAll(); req.onsuccess = () => res(req.result); req.onerror = rej; }); }
+        async function saveExpense(x) { if (!db) await initDB(); return new Promise((res, rej) => { const tx = db.transaction(['pengeluaran'], 'readwrite'); tx.objectStore('pengeluaran').put(x); tx.oncomplete = res; tx.onerror = rej; tx.onabort = rej; }); }
+        async function deleteExpenseDB(id) { if (!db) await initDB(); return new Promise((res, rej) => { const tx = db.transaction(['pengeluaran'], 'readwrite'); tx.objectStore('pengeluaran').delete(id); tx.oncomplete = res; tx.onerror = rej; tx.onabort = rej; }); }
+
+        // ---- Pengelompokan nota menjadi satu baris per servis ----
         function groupServis() {
             const g = {};
             historyData.forEach(h => { const k = h.originalId || h.id; (g[k] = g[k] || []).push(h); });
@@ -881,55 +912,294 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 const last = arr[arr.length - 1];
                 let status = 'proses';
                 if (last.type === 'langsung' || last.type === 'jual') status = 'diambil'; else if (last.type === 'ambil') status = (last.ambil && last.ambil.status === 'batal') ? 'batal' : 'diambil';
-                return { id: last.originalId || last.id, nama: unesc(last.nama), device: last.type === 'jual' ? unesc(last.keluhan) : unesc(last.device), total: Number(last.totalBiaya) || 0, dp: Number(last.dp) || 0, modal: Number(last.modal) || 0, metode: last.metodeBayar || '', status, ts: last.timestamp, jenis: last.type === 'jual' ? 'jual' : (arr.some(r => r.klaim) ? 'klaim' : 'servis'), sub: (last.type === 'diagnosa' && last.diagnosa) ? last.diagnosa.status : '' };
+                const dpAmt = Math.max(...arr.map(r => Number(r.dp) || 0));
+                const dpRow = arr.find(r => (Number(r.dp) || 0) > 0);
+                return { id: last.originalId || last.id, nama: unesc(last.nama), device: last.type === 'jual' ? unesc(last.keluhan) : unesc(last.device), total: Number(last.totalBiaya) || 0, dp: Number(last.dp) || 0, dpAmt, dpTs: dpRow ? dpRow.timestamp : null, modal: Number(last.modal) || 0, metode: last.metodeBayar || 'Tunai', status, ts: last.timestamp, jenis: last.type === 'jual' ? 'jual' : (arr.some(r => r.klaim) ? 'klaim' : 'servis'), sub: (last.type === 'diagnosa' && last.diagnosa) ? last.diagnosa.status : '' };
             }).sort((x, y) => new Date(y.ts) - new Date(x.ts));
         }
-        function ymKey(ts) { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
-        function showLaporan() {
+
+        // ---- Buku kas: semua uang masuk/keluar menurut tanggal terjadinya ----
+        function buildKas(data) {
+            const ev = [];
+            const add = (tgl, jenis, ket, masuk, keluar, metode) => ev.push({ tgl, jenis, ket, masuk, keluar, metode: METODE_LIST.includes(metode) ? metode : 'Tunai' });
+            const refund = localStorage.getItem('dp_batal_mode') !== 'hangus';
+            data.forEach(s => {
+                const ket = s.nama + ' - ' + s.device;
+                const ledger = paymentData.filter(p => p.serviceId === s.id);
+                if (ledger.length) {
+                    ledger.forEach(p => add(p.date, p.kind === 'refund' ? 'Refund/Koreksi' : 'Pembayaran', ket + (p.note ? ' (' + p.note + ')' : ''), p.kind === 'masuk' ? p.amount : 0, p.kind === 'refund' ? p.amount : 0, p.method));
+                    return; // jika buku pembayaran ada, jangan gandakan DP/pelunasan legacy
+                }
+                if (s.dpAmt > 0 && s.dpTs) add(dKey(s.dpTs), 'DP', ket, s.dpAmt, 0, s.metode);
+                if (s.status === 'diambil') {
+                    const bayar = Math.max(s.total - s.dpAmt, 0);
+                    if (bayar > 0) add(dKey(s.ts), s.jenis === 'jual' ? 'Penjualan' : (s.dpAmt > 0 ? 'Pelunasan' : 'Servis'), ket, bayar, 0, s.metode);
+                } else if (s.status === 'batal' && refund && s.dpAmt > 0) add(dKey(s.ts), 'Refund DP', ket, 0, s.dpAmt, s.metode);
+            });
+            expenseData.forEach(x => add(x.tanggal, x.kategori === KAT_STOK ? 'Beli Stok' : 'Pengeluaran', x.kategori + (x.ket ? ': ' + x.ket : ''), 0, x.jumlah, x.metode));
+            return ev.sort((a, b) => a.tgl.localeCompare(b.tgl));
+        }
+
+        // ---- Perhitungan laporan untuk periode terpilih ----
+        function hitungLaporan() {
+            if (!lapVal) lapVal = defaultLapVal(lapMode);
+            const sum = (arr, f) => arr.reduce((t, s) => t + f(s), 0);
+            const data = groupServis();
+            const selesai = data.filter(s => s.status === 'diambil' && inP(dKey(s.ts)));
+            const batal = data.filter(s => s.status === 'batal' && inP(dKey(s.ts)));
+            const proses = data.filter(s => s.status === 'proses');
+            const omzet = sum(selesai, s => s.total), modal = sum(selesai, s => s.modal), labaKotor = omzet - modal;
+            const hangus = localStorage.getItem('dp_batal_mode') === 'hangus';
+            const dpBatal = sum(batal, s => s.dpAmt), pendLain = hangus ? dpBatal : 0;
+            const exps = expenseData.filter(x => inP(x.tanggal)).sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+            const opex = sum(exps.filter(x => x.kategori !== KAT_STOK), x => x.jumlah);
+            const stok = sum(exps.filter(x => x.kategori === KAT_STOK), x => x.jumlah);
+            const labaBersih = labaKotor + pendLain - opex;
+            const kas = buildKas(data).filter(e => inP(e.tgl));
+            const masuk = sum(kas, e => e.masuk), keluar = sum(kas, e => e.keluar);
+            const metode = {}; METODE_LIST.forEach(m => { metode[m] = { masuk: sum(kas.filter(e => e.metode === m), e => e.masuk), keluar: sum(kas.filter(e => e.metode === m), e => e.keluar) }; });
+            const paidFor = s => { const ps=paymentData.filter(p=>p.serviceId===s.id); return ps.length ? Math.max(0, ps.reduce((a,p)=>a+(p.kind==='masuk'?p.amount:-p.amount),0)) : s.dpAmt; };
+            const dpProses = sum(proses, s => paidFor(s)), sisaProses = sum(proses, s => Math.max(s.total - paidFor(s), 0));
+            const perKat = {}; exps.forEach(x => { perKat[x.kategori] = (perKat[x.kategori] || 0) + x.jumlah; });
+            return { data, selesai, batal, proses, omzet, modal, labaKotor, hangus, dpBatal, pendLain, exps, opex, stok, labaBersih, kas, masuk, keluar, saldo: masuk - keluar, metode, dpProses, sisaProses, perKat };
+        }
+
+        // ---- UI ----
+        async function showLaporan() {
             const box = document.getElementById('laporanBox');
             if (box.style.display === 'block') { box.style.display = 'none'; return; }
+            await loadHistory();
             box.style.display = 'block'; renderLaporan();
         }
+        function setLapMode(m) { if (!['harian', 'bulanan', 'tahunan'].includes(m)) return; lapMode = m; lapVal = defaultLapVal(m); renderLaporan(); }
+        function setLapVal(v) {
+            const ok = lapMode === 'harian' ? /^\d{4}-\d{2}-\d{2}$/.test(v) : lapMode === 'bulanan' ? /^\d{4}-\d{2}$/.test(v) : /^\d{4}$/.test(v);
+            if (!ok) return; lapVal = v; renderLaporan();
+        }
+        function setDpBatalMode(m) { localStorage.setItem('dp_batal_mode', m === 'hangus' ? 'hangus' : 'refund'); renderLaporan(); }
+
         function renderLaporan() {
             const box = document.getElementById('laporanBox');
-            const prev = document.getElementById('laporanBulan');
-            const bulan = prev ? prev.value : ymKey(new Date());
-            const data = groupServis();
-            const selesai = data.filter(s => s.status === 'diambil' && ymKey(s.ts) === bulan);
-            const batal = data.filter(s => s.status === 'batal' && ymKey(s.ts) === bulan);
-            const proses = data.filter(s => s.status === 'proses');
-            const sum = (arr, f) => arr.reduce((t, s) => t + f(s), 0);
-            const omzet = sum(selesai, s => s.total), modal = sum(selesai, s => s.modal), laba = omzet - modal;
-            const dpBatal = sum(batal, s => s.dp);
-            const dpProses = sum(proses, s => s.dp), sisaProses = sum(proses, s => Math.max(s.total - s.dp, 0));
-            const card = (l, v) => `<div style="flex:1 1 45%; padding:10px; border-radius:10px; background:rgba(128,128,128,.12);"><div style="font-size:11px; opacity:.7;">${l}</div><div style="font-weight:bold;">${v}</div></div>`;
-            const rows = selesai.map(s => `<tr><td>${escapeHtml(s.nama)}<br><small>${escapeHtml(s.device)}${s.jenis === 'klaim' ? ' 🛡️ klaim' : ''}${s.jenis === 'jual' ? ' 🛍️' : ''}</small></td><td style="text-align:right;">${formatRupiah(s.total)}</td><td style="text-align:right;">${formatRupiah(s.modal)}</td><td style="text-align:right;">${formatRupiah(s.total - s.modal)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">Belum ada servis diambil bulan ini</td></tr>';
+            const L = hitungLaporan();
+            const card = (l, v, strong) => `<div style="flex:1 1 45%; padding:10px; border-radius:10px; background:rgba(128,128,128,${strong ? '.25' : '.12'});"><div style="font-size:11px; opacity:.7;">${l}</div><div style="font-weight:bold;">${v}</div></div>`;
+            const th = 'style="text-align:right; padding:3px 0;"';
+            const sec = t => `<div style="margin:14px 0 6px; font-weight:bold;">${t}</div>`;
+            const tableWrap = h => `<div style="overflow-x:auto;"><table style="width:100%; font-size:12px; border-collapse:collapse;">${h}</table></div>`;
+            const inputType = lapMode === 'harian' ? 'date' : lapMode === 'bulanan' ? 'month' : 'number';
+            const inputExtra = lapMode === 'tahunan' ? ' min="2000" max="2100" inputmode="numeric"' : '';
+            const rowsSelesai = L.selesai.map(s => `<tr><td style="padding:3px 0;">${escapeHtml(s.nama)}<br><small>${escapeHtml(s.device)}${s.jenis === 'klaim' ? ' 🛡️ klaim' : ''}${s.jenis === 'jual' ? ' 🛍️' : ''} · ${escapeHtml(s.metode)}</small></td><td ${th}>${formatRupiah(s.total)}</td><td ${th}>${formatRupiah(s.modal)}</td><td ${th}>${formatRupiah(s.total - s.modal)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center; padding:8px;">Belum ada transaksi selesai di periode ini</td></tr>';
+            const rowsProses = L.proses.map(s => { const ps=paymentData.filter(p=>p.serviceId===s.id); const paid=ps.length?Math.max(0,ps.reduce((a,p)=>a+(p.kind==='masuk'?p.amount:-p.amount),0)):s.dpAmt; return `<tr><td style="padding:3px 0;">${escapeHtml(s.nama)}<br><small>${escapeHtml(s.device)}${s.sub === 'sparepart' ? ' · menunggu sparepart' : ''}</small></td><td ${th}>${formatRupiah(s.total)}</td><td ${th}>${formatRupiah(paid)}</td><td ${th}>${formatRupiah(Math.max(s.total - paid, 0))}</td></tr>`; }).join('');
+            const rowsExp = L.exps.map(x => `<tr><td style="padding:3px 0;">${escapeHtml(x.tanggal.split('-').reverse().join('/'))}<br><small>${escapeHtml(x.kategori)}${x.ket ? ': ' + escapeHtml(x.ket) : ''} · ${escapeHtml(x.metode)}</small></td><td ${th}>${formatRupiah(x.jumlah)}</td><td ${th}><button class="btn-icon" style="background:#f0f0f0;" onclick="app.hapusPengeluaran('${x.id}')">🗑️</button></td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center; padding:8px;">Belum ada pengeluaran di periode ini</td></tr>';
+            const rowsKat = Object.keys(L.perKat).map(k => `<tr><td style="padding:3px 0;">${escapeHtml(k)}</td><td ${th}>${formatRupiah(L.perKat[k])}</td></tr>`).join('');
+            const rowsMetode = METODE_LIST.map(m => `<tr><td style="padding:3px 0;">${m}</td><td ${th}>${formatRupiah(L.metode[m].masuk)}</td><td ${th}>${formatRupiah(L.metode[m].keluar)}</td><td ${th}>${rp(L.metode[m].masuk - L.metode[m].keluar)}</td></tr>`).join('');
             box.innerHTML = `<div style="padding:12px; border-radius:12px; border:1px solid rgba(128,128,128,.3);">
-                <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><strong>📈 Laporan</strong><input type="month" id="laporanBulan" value="${bulan}" onchange="app.renderLaporan()" style="flex:1;"></div>
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><strong>📈</strong>
+                    <select id="lapModeSel" onchange="app.setLapMode(this.value)" style="flex:0 0 38%;"><option value="harian"${lapMode === 'harian' ? ' selected' : ''}>Harian</option><option value="bulanan"${lapMode === 'bulanan' ? ' selected' : ''}>Bulanan</option><option value="tahunan"${lapMode === 'tahunan' ? ' selected' : ''}>Tahunan</option></select>
+                    <input type="${inputType}"${inputExtra} id="lapValInput" value="${lapVal}" onchange="app.setLapVal(this.value)" style="flex:1;"></div>
+
+                ${sec('Laba / Rugi')}
                 <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                    ${card('Transaksi selesai', selesai.length + ' (servis ' + selesai.filter(s => s.jenis === 'servis').length + ' | jual ' + selesai.filter(s => s.jenis === 'jual').length + ' | klaim ' + selesai.filter(s => s.jenis === 'klaim').length + ')')}${card('Omzet', 'Rp ' + formatRupiah(omzet))}
-                    ${card('Modal sparepart', 'Rp ' + formatRupiah(modal))}${card('Laba kotor', 'Rp ' + formatRupiah(laba))}
-                    ${card('DP servis batal (' + batal.length + ')', 'Rp ' + formatRupiah(dpBatal))}${card('Servis berjalan (' + proses.length + ')', 'DP Rp ' + formatRupiah(dpProses) + '<br>Sisa Rp ' + formatRupiah(sisaProses) + '<br>Menunggu sparepart: ' + proses.filter(s => s.sub === 'sparepart').length)}
+                    ${card('Transaksi selesai', L.selesai.length + ' (servis ' + L.selesai.filter(s => s.jenis === 'servis').length + ' | jual ' + L.selesai.filter(s => s.jenis === 'jual').length + ' | klaim ' + L.selesai.filter(s => s.jenis === 'klaim').length + ')')}${card('Omzet', rp(L.omzet))}
+                    ${card('Modal sparepart/barang', rp(L.modal))}${card('Laba kotor', rp(L.labaKotor))}
+                    ${card('Pengeluaran operasional', rp(L.opex))}${card(L.hangus ? 'DP batal hangus (' + L.batal.length + ')' : 'DP batal (' + L.batal.length + ') – refund', L.hangus ? '+ ' + rp(L.pendLain) : rp(L.dpBatal) + '<br><small>tidak masuk laba</small>')}
+                    ${card('LABA BERSIH', rp(L.labaBersih), true)}${card('Pembelian stok (info)', rp(L.stok) + '<br><small>sudah terhitung di modal nota</small>')}
                 </div>
-                <div style="overflow-x:auto; margin-top:10px;"><table style="width:100%; font-size:12px; border-collapse:collapse;"><thead><tr><th style="text-align:left;">Servis</th><th>Total</th><th>Modal</th><th>Laba</th></tr></thead><tbody>${rows}</tbody></table></div>
-                <small style="display:block; margin-top:8px; opacity:.7;">Servis dihitung 1x per nota (tahap terakhir). Omzet = servis berstatus diambil pada bulan tsb, dianggap lunas. DP servis batal ditampilkan terpisah; tentukan sendiri hangus atau refund.</small>
-                <button class="btn-secondary" style="margin-top:8px;" onclick="app.exportLaporanCSV()">📊 Export CSV per servis</button></div>`;
+                <div style="margin-top:8px;"><label style="font-size:12px; opacity:.8;">DP servis yang dibatalkan:</label>
+                    <select onchange="app.setDpBatalMode(this.value)"><option value="refund"${L.hangus ? '' : ' selected'}>Dikembalikan ke pelanggan (refund)</option><option value="hangus"${L.hangus ? ' selected' : ''}>Hangus (jadi pendapatan toko)</option></select></div>
+
+                ${sec('Arus Kas (menurut tanggal uang diterima/dikeluarkan)')}
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">${card('Kas masuk', rp(L.masuk))}${card('Kas keluar', rp(L.keluar))}${card('Saldo periode', rp(L.saldo), true)}</div>
+                ${tableWrap(`<thead><tr><th style="text-align:left;">Metode</th><th>Masuk</th><th>Keluar</th><th>Saldo</th></tr></thead><tbody>${rowsMetode}</tbody>`)}
+                <small style="display:block; opacity:.7;">DP dianggap dibayar dengan metode yang sama seperti pelunasan. Cocokkan saldo Tunai dengan uang di laci, Transfer/QRIS dengan rekening.</small>
+
+                ${sec('Piutang / Servis Berjalan (' + L.proses.length + ')')}
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">${card('Pembayaran diterima', rp(L.dpProses))}${card('Sisa tagihan', rp(L.sisaProses))}</div>
+                ${L.proses.length ? tableWrap(`<thead><tr><th style="text-align:left;">Servis</th><th>Total</th><th>DP</th><th>Sisa</th></tr></thead><tbody>${rowsProses}</tbody>`) : ''}
+
+                ${sec('Catat Pengeluaran')}
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                    <input type="date" id="expTgl" value="${dKey(new Date())}">
+                    <select id="expKat">${KAT_OPERASIONAL.concat([KAT_STOK]).map(k => `<option value="${k}">${k}</option>`).join('')}</select>
+                    <input type="text" id="expKet" placeholder="Keterangan (opsional)">
+                    <input type="number" id="expJumlah" inputmode="numeric" min="0" placeholder="Jumlah (Rp)">
+                </div>
+                <select id="expMetode" style="margin-top:8px;">${METODE_LIST.map(m => `<option value="${m}">Dibayar: ${m}</option>`).join('')}</select>
+                <button class="btn-secondary" onclick="app.tambahPengeluaran()">➕ Simpan Pengeluaran</button>
+                ${sec('Daftar Pengeluaran Periode Ini')}
+                ${tableWrap(`<thead><tr><th style="text-align:left;">Pengeluaran</th><th>Jumlah</th><th></th></tr></thead><tbody>${rowsExp}</tbody>`)}
+                ${rowsKat ? tableWrap(`<tbody>${rowsKat}</tbody>`) : ''}
+
+                ${sec('Rincian Transaksi Selesai')}
+                ${tableWrap(`<thead><tr><th style="text-align:left;">Servis</th><th>Total</th><th>Modal</th><th>Laba</th></tr></thead><tbody>${rowsSelesai}</tbody>`)}
+                <small style="display:block; margin-top:8px; opacity:.7;">Omzet = transaksi yang sudah diambil/lunas pada periode tsb (1 servis dihitung 1x). Laba bersih = laba kotor − pengeluaran operasional (+ DP batal jika hangus). "Beli Stok/Sparepart" hanya masuk arus kas, tidak mengurangi laba karena modalnya sudah dicatat di nota.</small>
+                <button class="btn-secondary" onclick="app.exportLaporanPDF()">📄 Laporan PDF (periode ini)</button>
+                <button class="btn-secondary" onclick="app.exportBukuKas()">📒 Export Buku Kas CSV (periode ini)</button>
+                <button class="btn-secondary" onclick="app.exportLaporanCSV()">📊 Export CSV per servis (semua)</button></div>`;
+        }
+
+        async function tambahPengeluaran() {
+            const g = id => document.getElementById(id);
+            const tanggal = g('expTgl').value, jumlah = Math.round(parseFloat(g('expJumlah').value) || 0);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) { showToast('Isi tanggal pengeluaran'); return; }
+            if (jumlah <= 0) { showToast('Isi jumlah pengeluaran'); return; }
+            const x = sanitizeExpense({ id: 'exp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), tanggal, kategori: g('expKat').value, ket: g('expKet').value.trim(), jumlah, metode: g('expMetode').value });
+            try {
+                await saveExpense(x); expenseData.push(x); try { await auditLog('Tambah pengeluaran',`${x.tanggal} ${x.kategori} ${rupiah(x.jumlah)} ${x.metode}`); } catch (_) {}
+                showToast(inP(tanggal) ? 'Pengeluaran tersimpan' : 'Tersimpan (di luar periode yang sedang ditampilkan)');
+                renderLaporan();
+            } catch (e) { showToast('Gagal menyimpan pengeluaran'); }
+        }
+        async function hapusPengeluaran(id) {
+            if (!confirm('Hapus pengeluaran ini?')) return;
+            try { const old=expenseData.find(x=>x.id===id); await deleteExpenseDB(id); expenseData = expenseData.filter(x => x.id !== id); try { await auditLog('Hapus pengeluaran',`${old?.tanggal||''} ${old?.kategori||''} ${rupiah(old?.jumlah||0)}; ID ${id}`); } catch (_) {} renderLaporan(); showToast('Pengeluaran dihapus; jejak audit disimpan'); }
+            catch (e) { showToast('Gagal menghapus'); }
+        }
+
+        // ---- MODUL LANJUTAN TAHAP 1-3 ----
+        async function getAllStore(name) { if (!db) await initDB(); return new Promise((res, rej) => { const tx=db.transaction([name],'readonly'); const req=tx.objectStore(name).getAll(); req.onsuccess=()=>res(req.result||[]); req.onerror=()=>rej(req.error); }); }
+        async function putStore(name, item) { if (!db) await initDB(); return new Promise((res, rej) => { const tx=db.transaction([name],'readwrite'); tx.objectStore(name).put(item); tx.oncomplete=()=>res(true); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error); }); }
+        function validPayment(x) { return !!(x && x.id && x.serviceId && /^\d{4}-\d{2}-\d{2}$/.test(String(x.date)) && Number(x.amount)>0 && ['Tunai','Transfer','QRIS','Lain-lain'].includes(x.method) && ['masuk','refund'].includes(x.kind)); }
+        function validInventory(x) { return !!(x && x.id && String(x.name||'').trim() && Number.isFinite(Number(x.qty)) && Number(x.qty)>=0 && Number.isFinite(Number(x.cost)) && Number(x.cost)>=0); }
+        function validStockMove(x) { return !!(x && x.id && x.itemId && Number.isFinite(Number(x.qty)) && Number(x.qty)!==0 && ['masuk','keluar','koreksi'].includes(x.kind)); }
+        function stockMoveId() { return 'mov_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+        async function logStockMove(item, kind, qty, meta={}) { const row={id:stockMoveId(),itemId:item.id,sku:item.sku||'',name:item.name,kind,qty:Number(qty),before:Number(meta.before ?? item.qty),after:Number(meta.after ?? item.qty),unitCost:Number(item.cost)||0,totalCost:Math.abs(Number(qty))*(Number(item.cost)||0),date:meta.date||dKey(new Date()),source:meta.source||'manual',reference:meta.reference||'',note:String(meta.note||'').slice(0,250),createdAt:new Date().toISOString()}; await putStore('mutasi_stok',row); inventoryMoves.unshift(row); return row; }
+        function findInventoryItem(query) { const q=String(query||'').trim().toLowerCase(); if(!q)return null; return inventoryData.find(x=>String(x.sku||'').toLowerCase()===q)||inventoryData.find(x=>String(x.name||'').toLowerCase()===q)||null; }
+        function rupiah(n) { return 'Rp ' + Math.round(Number(n)||0).toLocaleString('id-ID'); }
+        async function auditLog(action, detail) { const row={id:'aud_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), at:new Date().toISOString(), action:String(action), detail:String(detail||'').slice(0,500)}; await putStore('audit',row); auditData.unshift(row); }
+        function allPaymentsFor(serviceId) { return paymentData.filter(p=>p.serviceId===serviceId); }
+        async function showAdvancedFinance() { const box=document.getElementById('advancedFinanceBox'); if(!box) return; await loadHistory(); box.style.display=box.style.display==='block'?'none':'block'; if(box.style.display==='block') renderAdvancedFinance(); }
+        function renderAdvancedFinance() {
+            const box=document.getElementById('advancedFinanceBox'); if(!box) return;
+            const today=dKey(new Date()), groups=groupServis();
+            const uncollected=groups.filter(s=>s.status==='proses' && s.jenis==='servis');
+            const overdue=uncollected.filter(s=>Math.floor((Date.now()-new Date(s.ts).getTime())/86400000)>=3);
+            const stockValue=inventoryData.reduce((a,x)=>a+(Number(x.qty)||0)*(Number(x.cost)||0),0);
+            const period=paymentData.filter(p=>p.date.startsWith(ymKey(new Date())) && p.kind==='masuk').reduce((a,p)=>a+p.amount,0);
+            const rows=paymentData.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,25).map(p=>`<tr><td>${escapeHtml(p.date)}<br><small>${escapeHtml(p.serviceId)}</small></td><td>${escapeHtml(p.kind==='refund'?'Refund':'Pembayaran')}<br><small>${escapeHtml(p.method)}</small></td><td>${rupiah(p.amount)}</td><td><button class="btn-icon" onclick="app.reversePayment('${p.id}')" title="Koreksi dengan pembatalan">↩️</button></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pembayaran manual</td></tr>';
+            const lowStock=inventoryData.filter(x=>Number(x.qty)<=Number(x.minStock||0));
+            const stockRows=inventoryData.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(x=>`<tr><td>${escapeHtml(x.name)}<br><small>${escapeHtml(x.sku||'SKU belum diisi')} · ${escapeHtml(x.category||'Umum')}</small></td><td><b>${x.qty}</b>${Number(x.qty)<=Number(x.minStock||0)?'<br><small style="color:#c62828">Stok menipis</small>':''}</td><td>${rupiah(x.cost)}</td><td>${rupiah(x.sellPrice||0)}</td><td>${rupiah(x.qty*x.cost)}</td><td><button class="btn-icon" onclick="app.adjustStock('${x.id}')">±</button></td></tr>`).join('')||'<tr><td colspan="6">Belum ada stok. Tambahkan barang di bawah.</td></tr>';
+            const moveRows=inventoryMoves.slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,30).map(m=>`<tr><td>${escapeHtml(m.date||'')}<br><small>${escapeHtml(m.reference||'')}</small></td><td>${escapeHtml(m.name||'')}<br><small>${escapeHtml(m.source||'')}</small></td><td>${m.kind==='masuk'?'Masuk':m.kind==='keluar'?'Keluar':'Koreksi'}</td><td>${m.qty>0?'+':''}${m.qty}</td><td>${m.after}</td><td>${escapeHtml(m.note||'')}</td></tr>`).join('')||'<tr><td colspan="6">Belum ada pergerakan stok.</td></tr>';
+            const pendingRows=uncollected.map(s=>`<tr><td>${escapeHtml(s.id)}<br>${escapeHtml(s.nama)}</td><td>${escapeHtml(s.device)}</td><td>${Math.max(0,Math.floor((Date.now()-new Date(s.ts).getTime())/86400000))} hari</td><td>${rupiah(Math.max(0,s.total-s.dpAmt))}</td></tr>`).join('')||'<tr><td colspan="4">Tidak ada servis berjalan dari data yang terkelompok.</td></tr>';
+            const auditRows=auditData.slice().sort((a,b)=>b.at.localeCompare(a.at)).slice(0,10).map(a=>`<tr><td>${escapeHtml(new Date(a.at).toLocaleString('id-ID'))}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.detail)}</td></tr>`).join('')||'<tr><td colspan="3">Belum ada log koreksi.</td></tr>';
+            const cloud=JSON.parse(localStorage.getItem('nota_cloud_config')||'{}');
+            box.innerHTML=`<div style="border:1px solid #ddd;border-radius:12px;padding:12px;display:grid;gap:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center"><b>🧾 Keuangan Lanjutan</b><button class="btn-icon" onclick="app.showAdvancedFinance()">✕</button></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="stat-card"><div class="stat-value">${rupiah(period)}</div><div class="stat-label">Pembayaran manual bulan ini</div></div><div class="stat-card"><div class="stat-value">${rupiah(stockValue)}</div><div class="stat-label">Nilai stok tercatat</div></div></div>
+            <section><b>Tahap 1 — Buku Pembayaran</b><p style="font-size:12px">Setiap pembayaran disimpan sebagai transaksi terpisah dan dipakai untuk buku kas/piutang ketika ID cocok dengan ID servis. Masukkan ID yang sama persis seperti ID pada riwayat/nota. Pembayaran manual tidak mengubah status workflow servis.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><input id="payDate" type="date" value="${today}"><input id="payService" placeholder="ID servis / nota"><input id="payAmount" type="number" min="1" placeholder="Nominal (Rp)"><select id="payKind"><option value="masuk">Uang masuk</option><option value="refund">Refund keluar</option></select><select id="payMethod"><option>Tunai</option><option>Transfer</option><option>QRIS</option><option>Lain-lain</option></select><input id="payNote" placeholder="Catatan"></div><button class="btn-primary" onclick="app.addPayment()">Simpan pembayaran</button>
+            <div style="overflow:auto"><table style="width:100%;font-size:12px"><thead><tr><th>Tanggal/ID</th><th>Jenis/Metode</th><th>Nominal</th><th>Koreksi</th></tr></thead><tbody>${rows}</tbody></table></div></section>
+            <section><b>Saldo awal & kas</b><p style="font-size:12px">Saldo awal disimpan per metode; angka ini dipakai untuk dashboard saldo, bukan mengubah laporan historis.</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><label>Tunai<input id="openCash" type="number" min="0" value="${Number(localStorage.getItem('opening_cash')||0)}"></label><label>Transfer<input id="openTransfer" type="number" min="0" value="${Number(localStorage.getItem('opening_transfer')||0)}"></label><label>QRIS<input id="openQris" type="number" min="0" value="${Number(localStorage.getItem('opening_qris')||0)}"></label><label>Lain-lain<input id="openOther" type="number" min="0" value="${Number(localStorage.getItem('opening_other')||0)}"></label></div><button class="btn-secondary" onclick="app.saveOpeningBalances()">Simpan saldo awal</button><p><b>Saldo awal total: ${rupiah(['opening_cash','opening_transfer','opening_qris','opening_other'].reduce((a,k)=>a+Number(localStorage.getItem(k)||0),0))}</b></p></section>
+            <section><b>📦 Manajemen inventaris sparepart terintegrasi</b><p style="font-size:12px">Item dapat dipakai pada transaksi stok masuk/keluar. Pemakaian melalui form ini harus dihubungkan dengan ID nota. Stok tidak akan boleh menjadi negatif.</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><input id="stockName" placeholder="Nama sparepart *"><input id="stockSku" placeholder="SKU / kode unik"><input id="stockCategory" placeholder="Kategori (LCD, baterai...)"><input id="stockSupplier" placeholder="Supplier (opsional)"><input id="stockQty" type="number" min="0" placeholder="Stok awal / qty masuk"><input id="stockCost" type="number" min="0" placeholder="Modal per unit"><input id="stockSell" type="number" min="0" placeholder="Harga jual/unit"><input id="stockMin" type="number" min="0" placeholder="Batas stok minimum"><input id="stockInDate" type="date" value="${today}"><select id="stockInKind"><option value="purchase">Pembelian baru (masuk kas keluar)</option><option value="opening">Stok awal/migrasi (tanpa pengeluaran kas)</option></select><select id="stockInMethod"><option>Tunai</option><option>Transfer</option><option>QRIS</option><option>Lain-lain</option></select></div><button class="btn-primary" onclick="app.addStock()">Simpan item / catat stok masuk</button><div style="background:#fff8e1;padding:8px;border-radius:8px;margin:8px 0;font-size:12px">⚠️ Stok menipis/habis: <b>${lowStock.length}</b> item. ${lowStock.slice(0,8).map(x=>escapeHtml(x.name)+' ('+x.qty+'/'+Number(x.minStock||0)+')').join(' · ')||'Semua stok di atas batas minimum.'}</div><div style="overflow:auto"><table style="width:100%;font-size:12px"><thead><tr><th>Barang</th><th>Qty</th><th>Modal/unit</th><th>Harga jual</th><th>Nilai stok</th><th>Penyesuaian</th></tr></thead><tbody>${stockRows}</tbody></table></div>
+            <h4>Catat barang keluar / pemakaian servis</h4><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><select id="stockOutItem"><option value="">Pilih sparepart</option>${inventoryData.map(x=>`<option value="${x.id}">${escapeHtml(x.name)} · stok ${x.qty}${x.sku?' · '+escapeHtml(x.sku):''}</option>`).join('')}</select><input id="stockOutQty" type="number" min="1" step="1" value="1" placeholder="Jumlah keluar"><input id="stockOutRef" placeholder="ID nota servis/penjualan"><select id="stockOutSource"><option value="servis">Pemakaian servis</option><option value="jual">Penjualan sparepart</option><option value="rusak">Rusak/hilang</option><option value="lainnya">Lainnya</option></select><input id="stockOutNote" placeholder="Catatan (opsional)"></div><button class="btn-secondary" onclick="app.stockOut()">Catat barang keluar</button>
+            <h4>Riwayat pergerakan stok (30 terakhir)</h4><div style="overflow:auto"><table style="width:100%;font-size:12px"><thead><tr><th>Tanggal/Referensi</th><th>Barang/Sumber</th><th>Jenis</th><th>Qty</th><th>Stok akhir</th><th>Catatan</th></tr></thead><tbody>${moveRows}</tbody></table></div></section>
+            <section><b>Tahap 3 — Pengingat servis & analitik</b><p>Servis belum diambil/berjalan: <b>${uncollected.length}</b> · Lebih dari 3 hari: <b>${overdue.length}</b> · Pembayaran manual bulan ini: <b>${rupiah(period)}</b></p><div style="overflow:auto"><table style="width:100%;font-size:12px"><thead><tr><th>Nota/Pelanggan</th><th>Perangkat</th><th>Umur</th><th>Sisa estimasi</th></tr></thead><tbody>${pendingRows}</tbody></table></div><button class="btn-secondary" onclick="app.exportAdvancedBackup()">📦 Backup lengkap (nota+keuangan+stok+log)</button><button class="btn-secondary" onclick="app.importMergeBundle()">↔️ Impor / gabung data perangkat lain</button><button class="btn-secondary" onclick="app.configureCloudSync()">☁️ Konfigurasi cloud (persiapan)</button><p style="font-size:12px">Cloud ${cloud.url&&cloud.key?'URL/key tersimpan pada perangkat ini':'belum dikonfigurasi'}. Sinkronisasi otomatis belum aktif sampai backend/API aman dibuat dan diuji; tombol impor/gabung backup dapat dipakai untuk pemindahan data manual antar-HP. Jangan masukkan service-role key.</p></section>
+            <section><b>Audit perubahan</b><div style="overflow:auto"><table style="width:100%;font-size:12px"><thead><tr><th>Waktu</th><th>Aksi</th><th>Detail</th></tr></thead><tbody>${auditRows}</tbody></table></div></section>
+            </div>`;
+        }
+        async function addPayment() { const g=id=>document.getElementById(id), amount=Math.round(Number(g('payAmount').value)||0), serviceId=g('payService').value.trim(), date=g('payDate').value, kind=g('payKind').value, method=g('payMethod').value; if(!serviceId||amount<=0||!/^\d{4}-\d{2}-\d{2}$/.test(date)){showToast('Isi ID servis, tanggal, dan nominal yang valid');return;} const p={id:'pay_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),serviceId,date,amount,kind,method,note:g('payNote').value.trim(),createdAt:new Date().toISOString()}; if(!validPayment(p)){showToast('Data pembayaran tidak valid');return;} await putStore('pembayaran',p); paymentData.push(p); await auditLog('Tambah pembayaran',`${serviceId} ${kind} ${rupiah(amount)} ${method}`); renderAdvancedFinance(); showToast('Pembayaran tersimpan'); }
+        async function reversePayment(id) { const p=paymentData.find(x=>x.id===id); if(!p||p.reversedBy||!confirm('Buat transaksi pembalik untuk mengoreksi pembayaran ini? Transaksi asli akan tetap tersimpan sebagai jejak audit.'))return; const rev={id:'payrev_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),serviceId:p.serviceId,date:dKey(new Date()),amount:p.amount,kind:p.kind==='masuk'?'refund':'masuk',method:p.method,note:'Koreksi transaksi '+p.id,createdAt:new Date().toISOString(),reversalOf:p.id}; p.reversedBy=rev.id; await putStore('pembayaran',p); await putStore('pembayaran',rev); paymentData.push(rev); await auditLog('Koreksi pembayaran',`${p.id} dibalik oleh ${rev.id}; ${rupiah(p.amount)}`); showToast('Transaksi pembalik dibuat; riwayat asli dipertahankan.'); renderAdvancedFinance(); }
+        async function saveOpeningBalances() { const keys=['opening_cash','opening_transfer','opening_qris','opening_other'], ids=['openCash','openTransfer','openQris','openOther']; keys.forEach((k,i)=>localStorage.setItem(k,String(Math.max(0,Math.round(Number(document.getElementById(ids[i]).value)||0))))); await auditLog('Ubah saldo awal',keys.map(k=>k+'='+localStorage.getItem(k)).join('; ')); showToast('Saldo awal disimpan'); renderAdvancedFinance(); }
+        async function consumeInventoryForService(nota) {
+            const reference=String(nota.originalId||nota.id||nota.notaId); let raw='';
+            if(nota.type==='langsung') raw=nota.langsung?.sparepart||'';
+            else { const diag=historyData.find(h=>h.type==='diagnosa' && String(h.originalId||h.id)===reference && h.diagnosa?.sparepart); raw=diag?.diagnosa?.sparepart||''; }
+            if(!String(raw).trim())return;
+            const tokens=String(raw).split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean), plan=[], warnings=[];
+            for(const token of tokens){let qty=1, query=token; const m=token.match(/^(\d+)\s*(?:x|×)\s*(.+)$/i);if(m){qty=Math.max(1,parseInt(m[1],10));query=m[2].trim();}const item=findInventoryItem(query);if(!item){warnings.push(token+' (tidak cocok dengan master stok)');continue;}const already=inventoryMoves.some(m=>m.kind==='keluar'&&m.itemId===item.id&&m.reference===reference&&m.source==='servis nota');if(already)continue;if(Number(item.qty)<qty){warnings.push(`${item.name} (stok ${item.qty}, perlu ${qty})`);continue;}plan.push({item,qty});}
+            for(const x of plan){const before=Number(x.item.qty);x.item.qty=before-x.qty;x.item.updatedAt=new Date().toISOString();await putStore('inventori',x.item);inventoryData=inventoryData.map(y=>y.id===x.item.id?x.item:y);await logStockMove(x.item,'keluar',-x.qty,{before,after:x.item.qty,source:'servis nota',reference,note:`Pemakaian otomatis dari nota ${nota.notaId||reference}`});await auditLog('Stok otomatis untuk servis',`${x.item.name} -${x.qty}; nota ${nota.notaId||reference}`);}
+            if(plan.length){try{renderAdvancedFinance();}catch(_){}}
+            if(warnings.length)showToast('Stok servis belum seluruhnya dipotong: '+warnings.join('; '));
+        }
+        async function consumeInventoryForSale(nota) {
+            const reference=String(nota.originalId||nota.id||nota.notaId); const items=nota.jual.items; const plan=[]; const unknown=[]; const insufficient=[];
+            for(const line of items){ const item=findInventoryItem(line.sku||line.nama||line.name); if(!item){ const byName=findInventoryItem(line.nama||line.name); if(byName){} else { unknown.push(line.nama||line.name||'Barang'); continue; } } const matched=item||findInventoryItem(line.nama||line.name); if(!matched)continue; const qty=Math.max(1,Math.floor(Number(line.qty)||1)); const already=inventoryMoves.some(m=>m.kind==='keluar'&&m.itemId===matched.id&&m.reference===reference&&m.source==='penjualan nota'); if(already)continue; if(Number(matched.qty)<qty){insufficient.push(`${matched.name} (stok ${matched.qty}, perlu ${qty})`);continue;} plan.push({item:matched,qty}); }
+            for(const x of plan){const before=Number(x.item.qty);x.item.qty=before-x.qty;x.item.updatedAt=new Date().toISOString();await putStore('inventori',x.item);inventoryData=inventoryData.map(y=>y.id===x.item.id?x.item:y);await logStockMove(x.item,'keluar',-x.qty,{before,after:x.item.qty,source:'penjualan nota',reference,note:`Otomatis dari nota ${nota.notaId||reference}`});await auditLog('Stok otomatis keluar',`${x.item.name} -${x.qty}; nota ${nota.notaId||reference}`);}
+            if(plan.length) { try{renderAdvancedFinance();}catch(_){} }
+            const warnings=[];if(unknown.length)warnings.push('barang tidak terhubung ke master: '+unknown.join(', '));if(insufficient.length)warnings.push('stok kurang: '+insufficient.join(', '));if(warnings.length)showToast('Stok nota: '+warnings.join('; '));
+        }
+        async function addStock() {
+            const g=id=>document.getElementById(id), name=g('stockName').value.trim(), sku=g('stockSku').value.trim(), qty=Math.max(0,Math.floor(Number(g('stockQty').value)||0)), cost=Math.max(0,Math.round(Number(g('stockCost').value)||0)), sellPrice=Math.max(0,Math.round(Number(g('stockSell').value)||0)), minStock=Math.max(0,Math.floor(Number(g('stockMin').value)||0)), category=g('stockCategory').value.trim(), supplier=g('stockSupplier').value.trim(), inDate=g('stockInDate')?.value||dKey(new Date()), inKind=g('stockInKind')?.value||'opening', inMethod=g('stockInMethod')?.value||'Tunai';
+            if(!name){showToast('Nama sparepart wajib diisi');return;}
+            if(sku && inventoryData.some(y=>String(y.sku||'').toLowerCase()===sku.toLowerCase() && (!inventoryData.find(x=>x.id===y.id && x.name.toLowerCase()===name.toLowerCase())))){ const duplicate=inventoryData.find(y=>String(y.sku||'').toLowerCase()===sku.toLowerCase() && y.name.toLowerCase()!==name.toLowerCase()); if(duplicate){showToast('SKU sudah digunakan barang lain');return;} }
+            let old=inventoryData.find(x=>x.sku&&sku&&x.sku.toLowerCase()===sku.toLowerCase())||inventoryData.find(x=>x.name.toLowerCase()===name.toLowerCase());
+            const before=old?Number(old.qty)||0:0;
+            const x={id:old?old.id:'stk_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name,sku:sku|| (old&&old.sku)||'',category,supplier,qty:before+qty,cost:cost||(old?old.cost:0),sellPrice:sellPrice||(old?old.sellPrice:0),minStock,updatedAt:new Date().toISOString(),createdAt:old?.createdAt||new Date().toISOString()};
+            if(!validInventory(x)){showToast('Data sparepart tidak valid');return;}
+            await putStore('inventori',x); if(old) inventoryData=inventoryData.map(y=>y.id===old.id?x:y); else inventoryData.push(x);
+            if(qty>0) await logStockMove(x,'masuk',qty,{before,after:x.qty,date:inDate,source:inKind==='purchase'?'pembelian stok':(old?'penerimaan stok':'stok awal'),note:supplier?'Supplier: '+supplier:'Tambah stok'});
+            if(qty>0 && inKind==='purchase'){ const exp=sanitizeExpense({id:'exp_stock_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),tanggal:inDate,kategori:KAT_STOK,ket:`${name} x${qty}${supplier?' · '+supplier:''} · ref stok ${x.id}`,jumlah:qty*(cost||x.cost),metode:inMethod}); await saveExpense(exp); expenseData.push(exp); await auditLog('Pembelian sparepart',`${name} x${qty}; total ${rupiah(exp.jumlah)}; ${inMethod}; supplier ${supplier||'-'}`); }
+            await auditLog(old?'Perbarui master/tambah stok':'Buat item stok',`${name}; qty +${qty}; stok ${before}→${x.qty}; modal ${rupiah(x.cost)}`);
+            ['stockName','stockSku','stockCategory','stockSupplier','stockQty','stockCost','stockSell','stockMin'].forEach(id=>{if(g(id))g(id).value='';}); renderAdvancedFinance(); showToast(old?'Item diperbarui dan stok masuk dicatat':'Item sparepart ditambahkan');
+        }
+        async function stockOut() {
+            const g=id=>document.getElementById(id), id=g('stockOutItem').value, qty=Math.floor(Number(g('stockOutQty').value)||0), reference=g('stockOutRef').value.trim(), source=g('stockOutSource').value, note=g('stockOutNote').value.trim();
+            const x=inventoryData.find(y=>y.id===id); if(!x){showToast('Pilih sparepart terlebih dahulu');return;} if(!Number.isInteger(qty)||qty<=0){showToast('Jumlah keluar harus bilangan bulat lebih dari nol');return;} if(qty>Number(x.qty)){showToast(`Stok tidak cukup. Tersedia ${x.qty}`);return;} if(source==='servis'&&!reference){showToast('Isi ID nota servis untuk pemakaian servis');return;}
+            if(reference && inventoryMoves.some(m=>m.kind==='keluar'&&m.itemId===id&&m.reference===reference&&m.source===source)){if(!confirm('Sudah ada pergerakan keluar untuk barang ini dengan ID nota dan sumber yang sama. Tetap catat sebagai pemakaian tambahan?'))return;}
+            const before=Number(x.qty); x.qty=before-qty; x.updatedAt=new Date().toISOString(); await putStore('inventori',x); inventoryData=inventoryData.map(y=>y.id===id?x:y); await logStockMove(x,'keluar',-qty,{before,after:x.qty,source,reference,note}); await auditLog('Barang keluar',`${x.name}; qty -${qty}; stok ${before}→${x.qty}; ${source}; referensi ${reference}`); renderAdvancedFinance(); showToast(`Stok ${x.name} berkurang ${qty}`);
+        }
+        async function adjustStock(id) { const x=inventoryData.find(y=>y.id===id); if(!x)return; const raw=prompt(`Penyesuaian stok untuk ${x.name}. Masukkan perubahan qty (+/-):`,'0'); if(raw===null)return; const delta=Number(raw); if(!Number.isInteger(delta)||delta===0||x.qty+delta<0){showToast('Jumlah stok tidak valid');return;} const reason=prompt('Alasan penyesuaian stok (wajib):','Hitung stok fisik'); if(reason===null||!reason.trim()){showToast('Alasan penyesuaian wajib diisi');return;} const before=Number(x.qty); x.qty+=delta; x.updatedAt=new Date().toISOString(); await putStore('inventori',x); inventoryData=inventoryData.map(y=>y.id===id?x:y); await logStockMove(x,'koreksi',delta,{before,after:x.qty,source:'koreksi stok',note:reason.trim()}); await auditLog('Penyesuaian stok',`${x.name}: ${delta>0?'+':''}${delta}; stok ${before}→${x.qty}; alasan: ${reason.trim()}`); renderAdvancedFinance(); showToast('Penyesuaian stok tersimpan'); }
+        async function exportAdvancedBackup() { await loadHistory(); const data={version:3,settings:tokoSettings,history:historyData.map(({passwordDevice,...n})=>n),logo:logoData,pengeluaran:expenseData,pembayaran:paymentData,inventori:inventoryData,mutasiStok:inventoryMoves,audit:auditData,footers,sk:skText,autoWASelesai,autoWAAmbil,waNotifTemplate,openingBalances:{cash:Number(localStorage.getItem('opening_cash')||0),transfer:Number(localStorage.getItem('opening_transfer')||0),qris:Number(localStorage.getItem('opening_qris')||0),other:Number(localStorage.getItem('opening_other')||0)},exported:new Date().toISOString(),note:'Data pola/password perangkat tidak disertakan.'}; await kirimFile(`Backup_Lengkap_${todayFile()}.json`,JSON.stringify(data,null,2),'application/json','Backup Lengkap Nota Service'); localStorage.setItem('last_backup_at',new Date().toISOString()); }
+        function todayFile(){return new Date().toISOString().slice(0,10)}
+        async function importMergeBundle(){ const input=document.createElement('input'); input.type='file'; input.accept='.json,application/json'; input.onchange=async()=>{const f=input.files&&input.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!d||!Array.isArray(d.history))throw new Error('Format backup tidak dikenal');if(!confirm('Gabungkan backup ke data lokal? Data dengan ID sama akan diperbarui. Buat backup dulu disarankan.'))return;let n=0;for(const raw of d.history){const x=sanitizeNota(raw);if(x){await saveToDB(x);n++;}}for(const x of (d.pengeluaran||[]))if(sanitizeExpense(x))await saveExpense(sanitizeExpense(x));for(const x of (d.pembayaran||[]))if(validPayment(x))await putStore('pembayaran',x);for(const x of (d.inventori||[]))if(validInventory(x))await putStore('inventori',x);for(const x of (d.mutasiStok||[]))if(validStockMove(x))await putStore('mutasi_stok',x);for(const x of (d.audit||[]))if(x&&x.id&&x.action)await putStore('audit',x);await auditLog('Gabung backup',`${n} nota diimpor`);await loadHistory();renderAdvancedFinance();showToast(`Gabung selesai: ${n} nota`);}catch(e){showToast('Impor gagal: '+e.message)}};input.click(); }
+        async function configureCloudSync(){const old=JSON.parse(localStorage.getItem('nota_cloud_config')||'{}');const url=prompt('Supabase Project URL (contoh https://xxxx.supabase.co). Kosongkan untuk membatalkan.',old.url||'');if(!url)return;const key=prompt('Supabase anon/publishable key (JANGAN gunakan service_role key).',old.key||'');if(!key)return;localStorage.setItem('nota_cloud_config',JSON.stringify({url:url.replace(/\/$/,''),key,configuredAt:new Date().toISOString()}));await auditLog('Konfigurasi cloud','URL disimpan lokal; key anon disimpan lokal pada perangkat ini');renderAdvancedFinance();showToast('Konfigurasi disimpan. Backend/tabel SQL masih harus disiapkan sebelum sinkronisasi aktif.');}
+
+        // ---- Ekspor ----
+        async function kirimFile(name, text, mime, title) {
+            if (isCapacitor()) { await shareFile(name, textToB64(text), mime, title); return; }
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: mime + ';charset=utf-8;' })); a.download = name; a.click();
         }
         function exportLaporanCSV() {
             const data = groupServis(); if (!data.length) { showToast('Belum ada data'); return; }
             let csv = '\ufeffIDServis,Tanggal,Nama,Device,Status,Total,DP,Sisa,Modal,Laba,Metode,Jenis\n';
-            data.forEach(s => { csv += [csvCell(s.id), csvCell(new Date(s.ts).toISOString().slice(0, 10)), csvCell(s.nama), csvCell(s.device), csvCell(s.status), s.total, s.dp, Math.max(s.total - s.dp, 0), s.modal, s.status === 'diambil' ? s.total - s.modal : 0, csvCell(s.metode), csvCell(s.jenis)].join(',') + '\n'; });
-            const name = `Laporan_Servis_${new Date().toISOString().slice(0, 10)}.csv`;
-            if (isCapacitor()) { shareFile(name, textToB64(csv), 'text/csv', 'Laporan Servis').catch(e => showToast('Gagal: ' + e.message)); return; }
-            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); a.download = name; a.click();
+            data.forEach(s => { csv += [csvCell(s.id), csvCell(dKey(s.ts)), csvCell(s.nama), csvCell(s.device), csvCell(s.status), s.total, s.dpAmt, Math.max(s.total - s.dpAmt, 0), s.modal, s.status === 'diambil' ? s.total - s.modal : 0, csvCell(s.metode), csvCell(s.jenis)].join(',') + '\n'; });
+            kirimFile(`Laporan_Servis_${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv', 'Laporan Servis').catch(e => showToast('Gagal: ' + e.message));
+        }
+        function exportBukuKas() {
+            const L = hitungLaporan(); if (!L.kas.length) { showToast('Tidak ada transaksi kas di periode ini'); return; }
+            let saldo = 0, csv = '\ufeffTanggal,Jenis,Keterangan,Masuk,Keluar,Saldo,Metode\n';
+            L.kas.forEach(e => { saldo += e.masuk - e.keluar; csv += [csvCell(e.tgl), csvCell(e.jenis), csvCell(e.ket), e.masuk, e.keluar, saldo, csvCell(e.metode)].join(',') + '\n'; });
+            csv += [csvCell(''), csvCell('TOTAL'), csvCell(''), L.masuk, L.keluar, L.saldo, csvCell('')].join(',') + '\n';
+            kirimFile(`BukuKas_${lapMode}_${lapVal}.csv`, csv, 'text/csv', 'Buku Kas ' + lapVal).catch(e => showToast('Gagal: ' + e.message));
+        }
+        async function exportLaporanPDF() {
+            try {
+                const L = hitungLaporan(), { jsPDF } = window.jspdf, doc = new jsPDF('p', 'mm', 'a4');
+                const clean = t => String(t ?? '').replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '');
+                let y = 16;
+                const need = () => { if (y > 280) { doc.addPage(); y = 16; } };
+                const head = t => { need(); y += 3; doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(clean(t), 14, y); y += 6; doc.setFontSize(10); };
+                const row = (a, b, bold) => { need(); doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.text(clean(a).slice(0, 75), 14, y); if (b !== undefined) doc.text(clean(b), 196, y, { align: 'right' }); y += 5.5; };
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(clean(tokoSettings.nama || 'Service HP'), 14, y); y += 7;
+                doc.setFontSize(11); doc.text('Laporan Keuangan ' + lapMode + ': ' + lapVal, 14, y); y += 5; doc.setFontSize(10);
+                head('Laba / Rugi');
+                row('Omzet (' + L.selesai.length + ' transaksi)', rp(L.omzet)); row('Modal sparepart/barang', rp(L.modal)); row('Laba kotor', rp(L.labaKotor), true);
+                row('Pengeluaran operasional', '-' + rp(L.opex).replace('-', ''));
+                if (L.hangus) row('DP batal hangus (' + L.batal.length + ')', rp(L.pendLain));
+                row('LABA BERSIH', rp(L.labaBersih), true);
+                head('Arus Kas');
+                METODE_LIST.forEach(m => row(m + '  (masuk ' + formatRupiah(L.metode[m].masuk) + ' / keluar ' + formatRupiah(L.metode[m].keluar) + ')', rp(L.metode[m].masuk - L.metode[m].keluar)));
+                row('Total kas masuk', rp(L.masuk)); row('Total kas keluar', rp(L.keluar)); row('Saldo periode', rp(L.saldo), true);
+                head('Piutang / servis berjalan (' + L.proses.length + ')');
+                row('DP sudah diterima', rp(L.dpProses)); row('Sisa tagihan', rp(L.sisaProses));
+                head('Pengeluaran (' + L.exps.length + ')');
+                L.exps.forEach(x => row(x.tanggal + '  ' + x.kategori + (x.ket ? ': ' + x.ket : ''), rp(x.jumlah)));
+                if (!L.exps.length) row('-');
+                head('Transaksi selesai (' + L.selesai.length + ')');
+                L.selesai.forEach(s => row(dKey(s.ts) + '  ' + s.nama + ' - ' + s.device + ' [' + s.metode + ']', rp(s.total)));
+                if (!L.selesai.length) row('-');
+                const name = `Laporan_${lapMode}_${lapVal}.pdf`;
+                if (isCapacitor()) await shareFile(name, doc.output('datauristring').split(',')[1], 'application/pdf', 'Laporan ' + lapVal); else doc.save(name);
+                showToast('✅ PDF laporan siap');
+            } catch (e) { showToast('Gagal PDF: ' + e.message); }
         }
 
-        return { init, selectType, selectAmbilStatus, buatPreview, renderPreview, updateWorkflowButtons, lanjutKe, kirimWA, printBluetooth, printFromPreview, generatePDF, exportCSV, exportJSON, restoreData, clearAllData, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, backToForm, buatNotaBaru, resetForm, importContact, handleFotoDevice, cleanPhoneInput, validatePhone, hitungSisa, loadHistoryItem, renderHistory, backupData: exportJSON, backupToDrive, previewThermal, closeThermalPreview, saveContact, savePrinterId, clearPrinterId, resetPattern, clearPattern, tambahItemJual, hitungJual, mulaiKlaim, klaimOff, cariGaransi, hitungEstimasi, showLaporan, renderLaporan, exportLaporanCSV };
+        return { init, selectType, selectAmbilStatus, buatPreview, renderPreview, updateWorkflowButtons, lanjutKe, kirimWA, printBluetooth, printFromPreview, generatePDF, exportCSV, exportJSON, restoreData, clearAllData, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, backToForm, buatNotaBaru, resetForm, importContact, handleFotoDevice, cleanPhoneInput, validatePhone, hitungSisa, loadHistoryItem, renderHistory, backupData: exportJSON, backupToDrive, previewThermal, closeThermalPreview, saveContact, savePrinterId, clearPrinterId, resetPattern, clearPattern, tambahItemJual, hitungJual, mulaiKlaim, klaimOff, cariGaransi, hitungEstimasi, showLaporan, renderLaporan, exportLaporanCSV, exportBukuKas, exportLaporanPDF, setLapMode, setLapVal, setDpBatalMode, tambahPengeluaran, hapusPengeluaran, showAdvancedFinance, addPayment, reversePayment, saveOpeningBalances, addStock, stockOut, adjustStock, exportAdvancedBackup, importMergeBundle, configureCloudSync };
     })();
 
     (async () => {
     await app.init();
     window.app = app;
+    try { const last=localStorage.getItem('last_backup_at'); const age=last?Date.now()-new Date(last).getTime():Infinity; if(age>7*86400000) setTimeout(()=>{ if(confirm('Pengingat backup: data belum di-backup selama 7 hari atau belum pernah. Buat backup lengkap sekarang?')) app.exportAdvancedBackup(); },1800); } catch(e) {}
     console.log('✅ Aplikasi Nota Service HP berhasil diinisialisasi');
 
     const fotoIn = document.getElementById('fotoDevice');
