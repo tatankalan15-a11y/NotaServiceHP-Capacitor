@@ -22,7 +22,7 @@ npm run android:sync  # setelah perubahan kode
 ## Catatan penting
 - Kode plugin Capacitor (Camera, Filesystem, Share, Contacts) sekarang dibundle dari package resmi Capacitor, bukan mengandalkan `Capacitor.Plugins`.
 - Password/pola perangkat tidak ditampilkan di nota pelanggan dan tidak diekspor ke CSV/backup. Informasi yang sudah tersimpan di database lokal lama tidak otomatis terhapus.
-- Izin Bluetooth di manifest bukan jaminan semua printer kompatibel. Plugin printer thermal adalah plugin Cordova pihak ketiga; uji pairing, cetak 58/80 mm, karakter, dan Android 12+ pada perangkat nyata sebelum dipakai harian.
+- Izin Bluetooth di manifest bukan jaminan semua printer kompatibel. Cetak thermal memakai plugin native buatan sendiri (`EscPosPrinter`, lihat bagian di bawah); uji pairing, cetak 58/80 mm, dan Android 12+ pada printer fisik sebelum dipakai harian.
 - APK workflow adalah debug APK, bukan build rilis Play Store.
 
 ## Kirim gambar nota langsung ke WhatsApp pelanggan
@@ -81,20 +81,20 @@ Menu Riwayat > **📈 Laporan & Pembukuan**. Periode bisa **Harian / Bulanan / T
 - **Piutang / servis berjalan**: daftar servis yang belum diambil beserta DP dan sisa tagihan.
 - **Ekspor**: Laporan PDF periode terpilih, Buku Kas CSV (dengan saldo berjalan), dan CSV per servis.
 - Catatan: metode bayar DP dianggap sama dengan metode pelunasan karena nota hanya menyimpan satu metode bayar.
-- Database pada versi dasar naik ke versi 9 (store baru `pengeluaran`).
+- Database naik ke versi 9 (store baru `pengeluaran`). Update dari versi lama otomatis dan data nota tetap ada.
 
 ## Pembaruan pembukuan lanjutan (Tahap 1–3)
 
 Versi kerja ini menambahkan modul lokal berikut:
 
-- **Buku pembayaran terpisah**: tanggal, ID servis, nominal, metode (Tunai/Transfer/QRIS/Lain-lain), pembayaran masuk/refund, dan transaksi pembalik untuk koreksi. Pembayaran manual masuk ke buku kas dan perhitungan sisa tagihan apabila `serviceId` cocok dengan ID servis yang tercatat.
+- **Buku pembayaran terpisah**: tanggal, ID servis, nominal, metode (Tunai/Transfer/QRIS/Lain-lain), pembayaran masuk/refund, dan transaksi pembalik untuk koreksi. Pembayaran manual **bersifat tambahan** di atas DP & pelunasan yang sudah tercatat di nota (misalnya pelanggan melunasi kurang bayar, refund, koreksi) dan masuk ke buku kas serta perhitungan sisa tagihan apabila `serviceId` cocok. Jangan memasukkan ulang DP/pelunasan yang sudah ada di nota.
 - **Saldo awal** per Tunai, Transfer, QRIS, dan Lain-lain. Nilai disimpan lokal dan ikut backup.
-- **Persediaan sparepart terintegrasi**: master SKU/nama/kategori/supplier, stok, modal, harga jual, batas minimum, nilai stok, pergerakan masuk/keluar/koreksi, dan riwayat 30 pergerakan terakhir. Penjualan nota otomatis mengurangi stok bila nama barang atau SKU cocok persis dengan master. Untuk pemakaian servis, gunakan form barang keluar dan masukkan ID nota; catatan sparepart di teks diagnosis juga dicocokkan secara otomatis saat servis selesai bila nama cocok persis.
+- **Persediaan sparepart**: kini berupa modul lengkap, lihat bagian *Manajemen Sparepart (v15)* di bawah.
 - **Audit log** untuk simpan/perbarui nota, pembayaran, koreksi pembayaran, perubahan saldo awal, stok, pengeluaran, dan gabung backup.
 - **Pengingat backup** saat aplikasi dibuka apabila belum ada backup selama 7 hari; backup lengkap mencakup nota, pengeluaran, pembayaran, inventori, audit, dan saldo awal. Android akan meminta pengguna menyimpan/membagikan file, tidak mengunggah diam-diam.
 - **Pengingat servis berjalan**: panel menampilkan servis berjalan, umur servis, dan sisa estimasi.
 - **Pemindahan data antarperangkat**: backup lengkap dapat digabung melalui impor pada perangkat kedua; data dengan ID sama diperbarui. Buat backup dahulu sebelum menggabungkan.
-- **IndexedDB v11**: menambah store `pembayaran`, `inventori`, `mutasi_stok`, dan `audit` tanpa menghapus store nota/pengeluaran lama. Upgrade database mempertahankan store yang sudah ada.
+- **IndexedDB v10**: menambah store `pembayaran`, `inventori`, dan `audit` tanpa menghapus store nota/pengeluaran lama.
 
 ### Batasan yang harus diketahui
 
@@ -102,7 +102,7 @@ Versi kerja ini menambahkan modul lokal berikut:
 2. Backup otomatis ke cloud belum tersedia; aplikasi hanya memberi pengingat dan membuka dialog berbagi/menyimpan backup. Pengunggahan ke Drive perlu dilakukan pengguna atau diintegrasikan dengan provider OAuth yang aman.
 3. Pengingat servis saat ini tampil di dalam aplikasi ketika dibuka, bukan notifikasi Android terjadwal di latar belakang.
 4. Buku pembayaran baru tidak mengubah otomatis status workflow servis. Untuk menghubungkan pembayaran, masukkan ID servis yang sama persis dengan ID pada riwayat. Data nota lama tanpa entri buku pembayaran tetap menggunakan perhitungan DP/pelunasan lama.
-5. Inventori terhubung dengan transaksi stok masuk/keluar. Stok penjualan nota berkurang otomatis hanya jika nama barang/SKU pada nota cocok persis dengan master inventori dan stok cukup. Untuk servis, gunakan form barang keluar dengan ID nota yang sama; pencocokan otomatis dari teks sparepart hanya bekerja jika nama item tepat sama. Stok tidak akan menjadi negatif. Modal barang yang dipakai pada servis belum otomatis mengubah total/modal pada nota, jadi tetap periksa kolom modal servis. Saat mencatat pembelian melalui form inventori, pengeluaran kategori `Beli Stok/Sparepart` dibuat otomatis; jangan mencatat pembelian yang sama lagi di menu pengeluaran agar tidak menggandakan arus kas.
+5. Pemotongan stok hanya terjadi pada sparepart yang dipilih lewat pemilih **🔩 Sparepart dari Stok** (atau dipilih dari stok di Nota Penjualan). Sparepart yang hanya diketik manual tidak memengaruhi stok.
 6. Build APK belum berhasil diverifikasi dalam lingkungan ini karena dependensi npm (termasuk `html2canvas`) belum tersedia dan `npm install` tidak selesai. Jalankan `npm install`, lalu `npm run build:web` dan verifikasi workflow GitHub Actions sebelum dipakai produksi.
 
 ### Tes sebelum dipakai untuk transaksi nyata
@@ -114,12 +114,53 @@ Versi kerja ini menambahkan modul lokal berikut:
 - Uji upgrade dari database lama ke IndexedDB v10 pada salinan data terlebih dahulu.
 
 
-### Pembaruan inventaris terintegrasi
+## Manajemen Sparepart (v15)
 
-- Form master item menerima nama, SKU, kategori, supplier, stok, modal/unit, harga jual, batas minimum, tanggal masuk, jenis stok masuk, dan metode pembayaran.
-- Pilih **Pembelian baru** untuk membuat mutasi stok masuk sekaligus catatan pengeluaran `Beli Stok/Sparepart`; pilih **Stok awal/migrasi** untuk memasukkan saldo stok tanpa mencatat kas keluar.
-- Penjualan dari nota otomatis mengurangi stok hanya untuk item yang cocok persis berdasarkan SKU/nama. Jika tidak cocok atau stok kurang, nota tetap disimpan dan aplikasi menampilkan peringatan agar stok diperiksa.
-- Pemakaian servis, kerusakan/kehilangan, dan barang keluar lain dicatat lewat form barang keluar. Pemakaian servis memerlukan ID nota sebagai referensi.
-- Penyesuaian stok memerlukan alasan dan dicatat pada kartu stok serta audit log. Stok negatif ditolak.
-- Backup lengkap mencakup master inventori dan `mutasiStok`; impor gabung memulihkan kedua jenis data tersebut.
-- Batasan: belum ada retur pembelian otomatis, hutang supplier, barcode scanner, pemakaian multi-item langsung dari form servis, atau penyesuaian modal nota otomatis. Lakukan uji coba dengan data salinan sebelum penggunaan produksi.
+Buka dari **Riwayat → 📦 Manajemen Sparepart**. (Panel **🧾 Keuangan Lanjutan** juga kini punya tombol di Riwayat; pada versi sebelumnya panel ini tidak memiliki wadah/tombol di `index.html` sehingga tidak bisa dibuka.)
+
+- **Master barang**: nama, SKU, kategori, cocok untuk (model HP), lokasi rak, supplier, modal/unit, harga jual, stok minimum. Edit, arsip (riwayat tetap tersimpan, bisa diaktifkan lagi), pencarian, dan filter Menipis / Habis / Arsip. Ada penanda **MENIPIS** / **HABIS** dan margin per barang.
+- **Kartu stok**: setiap perubahan stok tercatat (stok awal, barang masuk, dipakai nota, penyesuaian) lengkap dengan saldo. Stok hanya berubah lewat jalur ini.
+- **➕ Barang masuk**: modal per unit dihitung ulang sebagai **rata-rata tertimbang**. Opsional dicatat juga sebagai pengeluaran *Beli Stok/Sparepart* (masuk arus kas, tidak mengurangi laba, sama seperti aturan pembukuan yang sudah ada). Matikan centang bila pembelian sudah Anda catat manual agar tidak ganda.
+- **± Opname**: isi stok fisik, selisih dicatat beserta alasan (hitung fisik, rusak, hilang, retur).
+- **Terhubung ke nota**:
+  - Form **Diagnosa / Selesai / Servis Langsung** punya pemilih *🔩 Sparepart dari Stok*. Diagnosa hanya estimasi (mengisi harga sparepart dari harga jual); pilihan dari Diagnosa otomatis terisi lagi saat lanjut ke Selesai.
+  - Stok dipotong saat nota **Selesai** atau **Servis Langsung** disimpan, dan modal sparepart terisi otomatis dari modal stok (masih bisa diubah).
+  - **Nota Penjualan**: tiap baris bisa mengambil barang dari stok (nama, harga jual, modal terisi otomatis).
+  - Jika stok kurang, muncul konfirmasi; stok dikurangi paling banyak sampai 0 dan selisih dicatat di kartu stok.
+  - Bila nota dibuka lagi lewat **Kembali Edit** lalu disimpan ulang, nota yang sama **diperbarui** (tidak lagi membuat nota baru/duplikat, rantai tahap dan timeline tetap), dan stok lama dikembalikan dulu sebelum dipotong ulang.
+  - Bila servis **dibatalkan** di tahap Ambil/Batal, muncul pilihan mengembalikan sparepart yang sudah terpotong ke stok (pilih Batal bila sparepart sudah terpasang).
+  - Pemilih sparepart punya kolom **🔎 cari** (nama, SKU, model, kategori); bila hasil tinggal satu, otomatis terpilih.
+- **Ekspor Stok CSV**, dan data stok serta kartu stok ikut **Backup / Restore / Gabung data**.
+- **IndexedDB v11**: menambah store `stokmutasi`. Update dari versi lama otomatis; data lama (termasuk stok Tahap 2) tetap terbaca.
+
+### Catatan
+- Stok yang sudah ada dari versi sebelumnya tidak punya riwayat mutasi; kartu stoknya mulai dari perubahan pertama setelah update. Lakukan **± Opname** sekali bila ingin saldo awalnya tercatat.
+- Nota lama tidak dipotong stoknya secara retroaktif.
+- Diuji di lingkungan pengembangan: logika stok (potong, kurang stok, edit ulang, rata-rata modal) dan alur UI dasar. Build APK dan pengujian di HP tetap perlu dilakukan seperti biasa.
+
+## Cetak thermal langsung (ESC/POS native)
+Nota dicetak langsung ke printer thermal **tanpa aplikasi perantara** (tidak perlu RawBT dan sejenisnya).
+
+- **Plugin native**: `scripts/native/EscPosPrinterPlugin.java` — dikirim ke proyek Android dan didaftarkan di `MainActivity` otomatis oleh `scripts/patch-android.js`. Plugin ini hanya mengurus koneksi + mengirim byte; tidak ada dependensi Cordova pihak ketiga lagi.
+- **Encoder ESC/POS**: `src/escpos.js` mengubah teks nota (`[L]`/`[C]`/`[R]`, `<b>`, `<font size='big'>`) menjadi byte ESC/POS, dengan pembungkusan baris sesuai lebar kertas (58 mm = 32 karakter, 75/80 mm = 48 karakter), lalu potong kertas.
+- **Transport**:
+  - **Bluetooth Classic (SPP)** — printer harus sudah di-*pairing* di Pengaturan Bluetooth HP. Ini mayoritas printer thermal portabel 58 mm.
+  - **LAN/WiFi** — isi ID printer dengan IP, mis. `192.168.1.50` atau `192.168.1.50:9100` (port bawaan 9100).
+- **Cara pakai**: Pengaturan Printer Thermal → **Pilih Printer Bluetooth** (ketuk printer) atau isi ID manual → **Tes Cetak**. Setelah itu tombol cetak/Auto print langsung mengirim ke printer. Bila belum ada printer tersimpan, aplikasi memakai printer ter-pairing (menanyakan bila lebih dari satu).
+- **Izin**: Android 12+ meminta izin *Perangkat sekitar* (Bluetooth) saat pertama kali.
+- **Batasan**: belum mendukung printer **BLE-only** (tanpa SPP), printer **USB**, cetak logo/gambar, dan karakter non-ASCII (diganti `?`; aksen dihilangkan).
+- **Bila cetakan terpotong/acak**: sesuaikan `CHUNK_SIZE`, `CHUNK_DELAY_MS`, `MIN_FLUSH_WAIT_MS` di `EscPosPrinterPlugin.java`. Bila printer tidak punya pemotong, perintah potong diabaikan dan kertas hanya maju 4 baris.
+
+## Perbaikan pembukuan (v18)
+- **Kas tidak lagi berkurang saat ada pembayaran manual.** Sebelumnya, satu saja pembayaran manual untuk sebuah servis membuat DP dan pelunasan dari nota servis itu hilang dari buku kas. Kini DP/pelunasan nota selalu dihitung, dan pembayaran manual ditambahkan di atasnya.
+  - **Penting bila sudah ada data lama:** jika Anda pernah menginput pembayaran manual yang menyalin DP/pelunasan nota, nominal itu kini terhitung dua kali. Batalkan lewat tombol ↩️ di Keuangan Lanjutan.
+- **Kurang bayar saat ambil (piutang).** Nota Ambil dan Servis Langsung punya kolom *Kurang bayar saat diambil*. Pelunasan di kas hanya sebesar yang benar-benar dibayar; sisanya tercatat sebagai **piutang** (kartu di Laporan, daftar di Keuangan Lanjutan, kolom di CSV). Saat pelanggan melunasi, catat sebagai pembayaran manual dengan ID servis yang sama; piutang berkurang otomatis. Omzet/laba tetap diakui saat barang diambil.
+- Logika kas/piutang ada di `src/finance.js` (modul murni, sudah diuji di Node).
+
+## Perbaikan tampilan nota pelanggan (v19)
+- **Estimasi waktu** (mis. "1-2 hari") kini tampil di nota Terima/Diagnosa, juga di cetak thermal.
+- **Cap status bayar**: nota Ambil, Servis Langsung, dan Penjualan menampilkan **LUNAS** atau **BELUM LUNAS + jumlah kurang bayar** (juga di thermal). Baris "Dibayar saat ambil" selalu tampil bila ada DP/kurang bayar.
+- Nota Terima/Diagnosa memakai label **Estimasi Sisa** (bukan "Sisa Pembayaran") karena angkanya masih estimasi.
+- Judul **Syarat & Ketentuan** dipisah dari poin pertama; huruf dibesarkan ke 11px agar terbaca.
+- Watermark tetap "SERVICE HP" dihapus (bukan nama toko dan menimpa teks di gambar WhatsApp).
+- Timeline tanpa detik dan tidak patah baris.
