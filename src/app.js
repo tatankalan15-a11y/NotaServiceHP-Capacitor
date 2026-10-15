@@ -1,8 +1,11 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Camera } from '@capacitor/camera';
 import { Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Contacts } from '@capacitor-community/contacts';
+
+// Plugin native kustom (android/.../WhatsAppSharePlugin.java) untuk kirim gambar langsung ke chat nomor tertentu
+const WhatsAppShare = registerPlugin('WhatsAppShare');
 
 
     // ============================================
@@ -16,7 +19,7 @@ import { Contacts } from '@capacitor-community/contacts';
         // Capacitor 7: akses plugin melalui package import, bukan Capacitor.Plugins.
         function getPlugin(name) {
             if (!isCapacitor()) return null;
-            const plugins = { Camera, Filesystem, Share, Contacts };
+            const plugins = { Camera, Filesystem, Share, Contacts, WhatsAppShare };
             return plugins[name] || null;
         }
 
@@ -217,7 +220,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                         }
                         
                         // v5/v6/v7: pickContact() mengembalikan { contact: {...} }
-                        const result = await Contacts.pickContact();
+                        const result = await Contacts.pickContact({ projection: { name: true, phones: true } });
                         console.log("Raw result:", JSON.stringify(result, null, 2));
                         
                         // ✅ CEK: result.contact (bukan result langsung)
@@ -426,7 +429,19 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                     const blob = await captureNotaAsImage(400, 0.8, 2.5);
                     const file = new File([blob], `Nota_${currentNota.notaId}.jpg`, { type: 'image/jpeg' });
                     if (isCapacitor()) {
-                        await shareFile(`Nota_${currentNota.notaId}.jpg`, await blobToB64(blob), 'image/jpeg', `Nota ${currentNota.notaId}`); showToast('Berhasil dibagikan');
+                        const fname = `Nota_${currentNota.notaId}.jpg`, b64 = await blobToB64(blob);
+                        let sentDirect = false;
+                        if (no) {
+                            try {
+                                const w = await getPlugin('Filesystem').writeFile({ path: fname, data: b64, directory: 'CACHE' });
+                                await getPlugin('WhatsAppShare').sendImage({ uri: w.uri, phone: no });
+                                sentDirect = true;
+                                showToast('Chat WhatsApp pelanggan terbuka, tekan kirim');
+                            } catch (waErr) {
+                                console.warn('WA langsung gagal, pakai menu bagikan:', waErr);
+                            }
+                        }
+                        if (!sentDirect) { await shareFile(fname, b64, 'image/jpeg', `Nota ${currentNota.notaId}`); showToast('Berhasil dibagikan'); }
                     } else if (navigator.share && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: `Nota ${currentNota.notaId}` }); }
                     else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Nota_${currentNota.notaId}.jpg`; a.click(); URL.revokeObjectURL(a.href); showToast('Gambar disimpan, silakan kirim manual'); }
                 } catch(e){ showToast('Gagal membuat gambar: ' + e.message); }
