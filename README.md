@@ -59,3 +59,14 @@ Nama, Merek, Model otomatis berhuruf kapital di awal kata (kata yang sudah memua
 ## Format nomor & WhatsApp Business
 - Nomor boleh diketik/ditempel sebagai `+62 895-3380-1234`, `62895...`, `0895...`, atau `895...`; otomatis menjadi `0895...` (9-14 digit).
 - Pengaturan > **Aplikasi WhatsApp untuk kirim gambar**: Otomatis, WhatsApp Business, atau WhatsApp biasa. Pesan teks (wa.me) dibuka oleh aplikasi WhatsApp bawaan HP.
+
+## Preview thermal
+- Preview kini memakai pembangun teks yang sama dengan cetak asli (detail perbaikan, garansi, rincian, DP/sisa, catatan estimasi ikut tampil).
+- Tombol **🖨️ Cetak via Bluetooth** tersedia langsung di jendela preview.
+
+## Klaim Garansi, Menunggu Sparepart, Nota Penjualan
+- **🛡️ Klaim Garansi**: tombol di atas form. Isi No. Nota asal (nomor nota tahap mana pun) atau No. HP lalu tekan **Cek**: data pelanggan terisi dan status garansi (sisa hari / habis) ditampilkan. Klaim berjalan lewat alur biasa (Terima > Diagnosa > Selesai > Ambil), ditandai di nota dan laporan.
+- **Garansi (hari)** kini ada di tahap Selesai (dan Servis Langsung). Garansi dihitung dari tanggal unit diambil, dan tercetak di nota Ambil.
+- **Diagnosa**: status baru *Menunggu Sparepart* dan *Sedang Dikerjakan*; tombol **🔄 Update Status / Sparepart** pada nota diagnosa membuat catatan baru di timeline tanpa mengulang data. Laporan menghitung servis yang menunggu sparepart.
+- **🛍️ Nota Penjualan**: daftar barang (nama, jumlah, harga, modal), total dan modal dihitung otomatis, satu nota langsung lunas dan terkunci. Nama pelanggan dan nomor HP opsional (bawaan "Pelanggan Umum").
+- Laporan Keuangan memisahkan hitungan servis, penjualan, dan klaim; CSV laporan punya kolom Jenis.
