@@ -727,6 +727,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         return { init, selectType, selectAmbilStatus, buatPreview, renderPreview, updateWorkflowButtons, lanjutKe, kirimWA, printBluetooth, generatePDF, exportCSV, exportJSON, restoreData, clearAllData, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, backToForm, buatNotaBaru, resetForm, importContact, handleFotoDevice, cleanPhoneInput, validatePhone, hitungSisa, loadHistoryItem, renderHistory, backupData: exportJSON, backupToDrive, previewThermal, closeThermalPreview, saveContact, savePrinterId, clearPrinterId, resetPattern, clearPattern };
     })();
 
+    (async () => {
     await app.init();
     window.app = app;
     console.log('✅ Aplikasi Nota Service HP berhasil diinisialisasi');
@@ -739,3 +740,4 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
     if ('serviceWorker' in navigator && typeof Capacitor === 'undefined' && location.protocol.startsWith('http')) {
         fetch('./service-worker.js', { method: 'HEAD' }).then(r => { if (r.ok) return navigator.serviceWorker.register('./service-worker.js'); }).catch(() => {});
     }
+    })();
