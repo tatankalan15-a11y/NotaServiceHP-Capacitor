@@ -22,7 +22,7 @@ npm run android:sync  # setelah perubahan kode
 ## Catatan penting
 - Kode plugin Capacitor (Camera, Filesystem, Share, Contacts) sekarang dibundle dari package resmi Capacitor, bukan mengandalkan `Capacitor.Plugins`.
 - Password/pola perangkat tidak ditampilkan di nota pelanggan dan tidak diekspor ke CSV/backup. Informasi yang sudah tersimpan di database lokal lama tidak otomatis terhapus.
-- Izin Bluetooth di manifest bukan jaminan semua printer kompatibel. Plugin printer thermal adalah plugin Cordova pihak ketiga; uji pairing, cetak 58/80 mm, karakter, dan Android 12+ pada perangkat nyata sebelum dipakai harian.
+- Izin Bluetooth di manifest bukan jaminan semua printer kompatibel. Cetak thermal memakai plugin native buatan sendiri (`EscPosPrinter`, lihat bagian di bawah); uji pairing, cetak 58/80 mm, dan Android 12+ pada printer fisik sebelum dipakai harian.
 - APK workflow adalah debug APK, bukan build rilis Play Store.
 
 ## Kirim gambar nota langsung ke WhatsApp pelanggan
@@ -127,7 +127,9 @@ Buka dari **Riwayat → 📦 Manajemen Sparepart**. (Panel **🧾 Keuangan Lanju
   - Stok dipotong saat nota **Selesai** atau **Servis Langsung** disimpan, dan modal sparepart terisi otomatis dari modal stok (masih bisa diubah).
   - **Nota Penjualan**: tiap baris bisa mengambil barang dari stok (nama, harga jual, modal terisi otomatis).
   - Jika stok kurang, muncul konfirmasi; stok dikurangi paling banyak sampai 0 dan selisih dicatat di kartu stok.
-  - Bila nota dibuka lagi lewat **Kembali Edit** lalu disimpan ulang, stok nota sebelumnya dikembalikan lebih dulu agar tidak terpotong dua kali.
+  - Bila nota dibuka lagi lewat **Kembali Edit** lalu disimpan ulang, nota yang sama **diperbarui** (tidak lagi membuat nota baru/duplikat, rantai tahap dan timeline tetap), dan stok lama dikembalikan dulu sebelum dipotong ulang.
+  - Bila servis **dibatalkan** di tahap Ambil/Batal, muncul pilihan mengembalikan sparepart yang sudah terpotong ke stok (pilih Batal bila sparepart sudah terpasang).
+  - Pemilih sparepart punya kolom **🔎 cari** (nama, SKU, model, kategori); bila hasil tinggal satu, otomatis terpilih.
 - **Ekspor Stok CSV**, dan data stok serta kartu stok ikut **Backup / Restore / Gabung data**.
 - **IndexedDB v11**: menambah store `stokmutasi`. Update dari versi lama otomatis; data lama (termasuk stok Tahap 2) tetap terbaca.
 
@@ -135,3 +137,16 @@ Buka dari **Riwayat → 📦 Manajemen Sparepart**. (Panel **🧾 Keuangan Lanju
 - Stok yang sudah ada dari versi sebelumnya tidak punya riwayat mutasi; kartu stoknya mulai dari perubahan pertama setelah update. Lakukan **± Opname** sekali bila ingin saldo awalnya tercatat.
 - Nota lama tidak dipotong stoknya secara retroaktif.
 - Diuji di lingkungan pengembangan: logika stok (potong, kurang stok, edit ulang, rata-rata modal) dan alur UI dasar. Build APK dan pengujian di HP tetap perlu dilakukan seperti biasa.
+
+## Cetak thermal langsung (ESC/POS native)
+Nota dicetak langsung ke printer thermal **tanpa aplikasi perantara** (tidak perlu RawBT dan sejenisnya).
+
+- **Plugin native**: `scripts/native/EscPosPrinterPlugin.java` — dikirim ke proyek Android dan didaftarkan di `MainActivity` otomatis oleh `scripts/patch-android.js`. Plugin ini hanya mengurus koneksi + mengirim byte; tidak ada dependensi Cordova pihak ketiga lagi.
+- **Encoder ESC/POS**: `src/escpos.js` mengubah teks nota (`[L]`/`[C]`/`[R]`, `<b>`, `<font size='big'>`) menjadi byte ESC/POS, dengan pembungkusan baris sesuai lebar kertas (58 mm = 32 karakter, 75/80 mm = 48 karakter), lalu potong kertas.
+- **Transport**:
+  - **Bluetooth Classic (SPP)** — printer harus sudah di-*pairing* di Pengaturan Bluetooth HP. Ini mayoritas printer thermal portabel 58 mm.
+  - **LAN/WiFi** — isi ID printer dengan IP, mis. `192.168.1.50` atau `192.168.1.50:9100` (port bawaan 9100).
+- **Cara pakai**: Pengaturan Printer Thermal → **Pilih Printer Bluetooth** (ketuk printer) atau isi ID manual → **Tes Cetak**. Setelah itu tombol cetak/Auto print langsung mengirim ke printer. Bila belum ada printer tersimpan, aplikasi memakai printer ter-pairing (menanyakan bila lebih dari satu).
+- **Izin**: Android 12+ meminta izin *Perangkat sekitar* (Bluetooth) saat pertama kali.
+- **Batasan**: belum mendukung printer **BLE-only** (tanpa SPP), printer **USB**, cetak logo/gambar, dan karakter non-ASCII (diganti `?`; aksen dihilangkan).
+- **Bila cetakan terpotong/acak**: sesuaikan `CHUNK_SIZE`, `CHUNK_DELAY_MS`, `MIN_FLUSH_WAIT_MS` di `EscPosPrinterPlugin.java`. Bila printer tidak punya pemotong, perintah potong diabaikan dan kertas hanya maju 4 baris.
