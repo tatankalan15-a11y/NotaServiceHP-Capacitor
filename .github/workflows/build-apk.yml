@@ -18,6 +18,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Pakai kunci tanda tangan tetap (agar APK bisa di-update tanpa uninstall)
+        run: |
+          mkdir -p ~/.android
+          cp keystore/debug.keystore ~/.android/debug.keystore
       - run: npm install --legacy-peer-deps
       - run: npm run build:web
       - run: npx cap add android
