@@ -37,7 +37,7 @@ const WhatsAppShare = registerPlugin('WhatsAppShare');
         let tokoSettings = {}, historyData = [], logoData = null;
         let fotoDevicePath = null, fotoDeviceData = null;
         let footers = { terima:{text:'',enabled:false}, diagnosa:{text:'',enabled:false}, selesai:{text:'',enabled:false}, ambil:{text:'',enabled:false} };
-        let skText = "", autoWASelesai = false, autoWAAmbil = false, waNotifTemplate = "";
+        let klaimMode = false; let skText = "", autoWASelesai = false, autoWAAmbil = false, waNotifTemplate = "";
         let lastPrinterId = localStorage.getItem('last_printer_id') || '', autoPrint = false;
         
         // Pattern Lock
@@ -163,6 +163,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
 
         function validateForm() {
             let v = true;
+            if (currentType === 'jual') { if (!bacaItemJual().length) { showToast('Tambahkan minimal 1 barang'); return false; } return validatePhone(); }
             if (!document.getElementById('nama').value.trim()) { document.getElementById('namaError').classList.add('show'); v = false; } else document.getElementById('namaError').classList.remove('show');
             if (!validatePhone()) v = false;
             if (!document.getElementById('merek').value.trim()) { document.getElementById('merekError').classList.add('show'); v = false; } else document.getElementById('merekError').classList.remove('show');
@@ -321,6 +322,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
 
         async function buatPreview() {
             if (!validateForm()) { showToast('Harap lengkapi data wajib!'); return; }
+            if (currentType === 'jual') { hitungJual(); if (!document.getElementById('nama').value.trim()) document.getElementById('nama').value = 'Pelanggan Umum'; }
             ['nama','merek','model'].forEach(id => { const e = document.getElementById(id); e.value = capWords(e.value); });
             showLoading();
             try {
@@ -329,18 +331,19 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                     const est = historyData.filter(h => (h.originalId || h.id) === window._lanjutOriginalId && h.type === 'diagnosa').sort((x, y) => new Date(y.timestamp) - new Date(x.timestamp))[0];
                     if (est && est.totalBiaya > 0) { estAwal = est.totalBiaya; const fin = parseFloat(document.getElementById('totalBiaya').value) || 0; if (fin !== estAwal && !confirm(`Biaya akhir (Rp ${formatRupiah(fin)}) berbeda dari estimasi diagnosa (Rp ${formatRupiah(estAwal)}). Lanjutkan?`)) return; }
                 }
+                const itemsJual = currentType === 'jual' ? bacaItemJual() : [];
                 const device = `${document.getElementById('merek').value} ${document.getElementById('model').value}`.trim();
                 const now = new Date(), notaId = newNotaId(), originalId = window._lanjutOriginalId || notaId;
                 let timeline = [];
                 if (window._lanjutOriginalId) { const p = historyData.find(h => h.id === window._lanjutOriginalId); if (p && p.timeline) timeline = [...p.timeline]; }
-                timeline.push({ status: currentType, timestamp: now.toISOString(), waktu: now.toLocaleString('id-ID'), setuju: currentType === 'diagnosa' && document.getElementById('statusDiagnosa').value === 'setuju' });
+                timeline.push({ status: currentType, timestamp: now.toISOString(), waktu: now.toLocaleString('id-ID'), setuju: currentType === 'diagnosa' && document.getElementById('statusDiagnosa').value === 'setuju', sub: currentType === 'diagnosa' ? document.getElementById('statusDiagnosa').value : '' });
                 const totalBiaya = parseFloat(document.getElementById('totalBiaya').value)||0, dp = parseFloat(document.getElementById('dp').value)||0, sisa = totalBiaya - dp;
                 let fotoStorage = null;
                 if (isCapacitor() && fotoDevicePath) fotoStorage = { type: 'file', path: fotoDevicePath };
                 else if (fotoDeviceData) fotoStorage = { type: 'base64', data: fotoDeviceData };
                 let pwd = document.getElementById('passwordDevice').value, mt = document.getElementById('passwordDeviceText').value.trim();
                 if (mt) pwd = mt;
-                currentNota = { id: notaId, type: currentType, notaId, originalId, nama: escapeHtml(document.getElementById('nama').value.trim()), nohp: document.getElementById('nohp').value, device: escapeHtml(device), keluhan: escapeHtml(document.getElementById('keluhan').value.trim()), totalBiaya, dp, sisa, estimasi: escapeHtml(document.getElementById('estimasi').value), catatan: escapeHtml(document.getElementById('catatan').value), tanggal: now.toLocaleDateString('id-ID'), jam: now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}), timestamp: now.toISOString(), kelengkapan: currentType === 'terima' ? Array.from(document.querySelectorAll('#kelengkapanSection input:checked')).map(cb => cb.value) : [], kondisi: getKondisi(), passwordDevice: escapeHtml(pwd), fotoDevice: fotoStorage, diagnosa: currentType === 'diagnosa' ? { hasil: escapeHtml(document.getElementById('hasilDiagnosa').value), sparepart: escapeHtml(document.getElementById('sparepart').value), status: document.getElementById('statusDiagnosa').value, hargaSparepart: parseFloat(document.getElementById('hargaSparepart').value) || 0, biayaJasa: parseFloat(document.getElementById('biayaJasa').value) || 0 } : null, selesai: currentType === 'selesai' ? { detail: escapeHtml(document.getElementById('detailPerbaikan').value), status: document.getElementById('statusSelesai').value, siapAmbil: escapeHtml(document.getElementById('siapAmbil').value) } : null, ambil: currentType === 'ambil' ? { status: currentStatus, alasan: document.getElementById('alasanBatal').value } : null, timeline, modal: parseFloat(document.getElementById('modal').value)||0, metodeBayar: document.getElementById('metodeBayar').value, estimasiAwal: estAwal, langsung: currentType === 'langsung' ? { detail: escapeHtml(document.getElementById('detailLangsung').value.trim()), sparepart: escapeHtml(document.getElementById('sparepartLangsung').value.trim()), garansi: Math.max(parseInt(document.getElementById('garansiLangsung').value) || 0, 0) } : null };
+                currentNota = { id: notaId, type: currentType, notaId, originalId, nama: escapeHtml(document.getElementById('nama').value.trim()), nohp: document.getElementById('nohp').value, device: escapeHtml(currentType === 'jual' ? 'Penjualan Aksesoris' : device), keluhan: escapeHtml(currentType === 'jual' ? itemsJual.map(it => it.qty + 'x ' + it.nama).join(', ') : document.getElementById('keluhan').value.trim()), totalBiaya, dp, sisa, estimasi: escapeHtml(document.getElementById('estimasi').value), catatan: escapeHtml(document.getElementById('catatan').value), tanggal: now.toLocaleDateString('id-ID'), jam: now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}), timestamp: now.toISOString(), kelengkapan: currentType === 'terima' ? Array.from(document.querySelectorAll('#kelengkapanSection input:checked')).map(cb => cb.value) : [], kondisi: currentType === 'jual' ? [] : getKondisi(), passwordDevice: escapeHtml(pwd), fotoDevice: fotoStorage, diagnosa: currentType === 'diagnosa' ? { hasil: escapeHtml(document.getElementById('hasilDiagnosa').value), sparepart: escapeHtml(document.getElementById('sparepart').value), status: document.getElementById('statusDiagnosa').value, hargaSparepart: parseFloat(document.getElementById('hargaSparepart').value) || 0, biayaJasa: parseFloat(document.getElementById('biayaJasa').value) || 0 } : null, selesai: currentType === 'selesai' ? { detail: escapeHtml(document.getElementById('detailPerbaikan').value), status: document.getElementById('statusSelesai').value, siapAmbil: escapeHtml(document.getElementById('siapAmbil').value), garansi: Math.max(parseInt(document.getElementById('garansiSelesai').value) || 0, 0) } : null, ambil: currentType === 'ambil' ? { status: currentStatus, alasan: document.getElementById('alasanBatal').value } : null, timeline, modal: parseFloat(document.getElementById('modal').value)||0, metodeBayar: document.getElementById('metodeBayar').value, estimasiAwal: estAwal, langsung: currentType === 'langsung' ? { detail: escapeHtml(document.getElementById('detailLangsung').value.trim()), sparepart: escapeHtml(document.getElementById('sparepartLangsung').value.trim()), garansi: Math.max(parseInt(document.getElementById('garansiLangsung').value) || 0, 0) } : null, jual: itemsJual.length ? { items: itemsJual.map(it => ({ nama: escapeHtml(it.nama), qty: it.qty, harga: it.harga, modal: it.modal })) } : null, klaim: (klaimMode && (currentType === 'terima' || window._lanjutOriginalId)) ? { asal: escapeHtml(document.getElementById('klaimAsal').value.trim()), info: escapeHtml(document.getElementById('klaimInfo').textContent.trim()) } : null };
                 delete window._lanjutOriginalId;
                 currentNota = sanitizeNota(currentNota);
                 renderPreview(); await saveToHistory(currentNota); localStorage.removeItem('nota_draft');
@@ -355,7 +358,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
 
         function renderPreview() {
             let badgeClass, badgeText, paperClass;
-            switch(currentType){ case 'terima': badgeClass='badge-terima'; badgeText='📥 NOTA PENERIMAAN'; paperClass='terima'; break; case 'diagnosa': badgeClass='badge-diagnosa'; badgeText='🔍 HASIL DIAGNOSA'; paperClass='diagnosa'; break; case 'selesai': badgeClass='badge-selesai'; badgeText='✅ SELESAI'; paperClass='selesai'; break; case 'langsung': badgeClass='badge-ambil'; badgeText='⚡ SERVIS LANGSUNG'; paperClass='ambil'; break; case 'ambil': if(currentNota.ambil?.status==='batal'){ badgeClass='badge-batal'; badgeText='❌ DIBATALKAN'; paperClass='batal'; } else { badgeClass='badge-ambil'; badgeText='📤 DIAMBIL'; paperClass='ambil'; } break; }
+            switch(currentType){ case 'terima': badgeClass='badge-terima'; badgeText='📥 NOTA PENERIMAAN'; paperClass='terima'; break; case 'diagnosa': badgeClass='badge-diagnosa'; badgeText='🔍 HASIL DIAGNOSA'; paperClass='diagnosa'; break; case 'selesai': badgeClass='badge-selesai'; badgeText='✅ SELESAI'; paperClass='selesai'; break; case 'jual': badgeClass='badge-ambil'; badgeText='🛍️ NOTA PENJUALAN'; paperClass='ambil'; break; case 'langsung': badgeClass='badge-ambil'; badgeText='⚡ SERVIS LANGSUNG'; paperClass='ambil'; break; case 'ambil': if(currentNota.ambil?.status==='batal'){ badgeClass='badge-batal'; badgeText='❌ DIBATALKAN'; paperClass='batal'; } else { badgeClass='badge-ambil'; badgeText='📤 DIAMBIL'; paperClass='ambil'; } break; }
             let html = `<div class="nota-header">`;
             if(isSafeImg(logoData)) html+=`<img src="${logoData}" class="nota-logo">`;
             html+=`<h2>${escapeHtml(tokoSettings.nama||'Nota Service HP')}</h2>`;
@@ -368,24 +371,26 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             html+=`<div class="nota-section"><div class="nota-section-title">👤 Pelanggan</div>`;
             html+=`<div class="nota-row"><span class="nota-label">Nama</span><span class="nota-value">${currentNota.nama}</span></div>`;
             if(currentNota.nohp) html+=`<div class="nota-row"><span class="nota-label">No. HP</span><span class="nota-value">${currentNota.nohp}</span></div>`;
-            html+=`<div class="nota-row"><span class="nota-label">Device</span><span class="nota-value">${currentNota.device}</span></div>`;
+            if(currentType!=='jual') html+=`<div class="nota-row"><span class="nota-label">Device</span><span class="nota-value">${currentNota.device}</span></div>`;
+            if(currentNota.klaim) html+=`<div class="nota-row"><span class="nota-label">🛡️ Klaim Garansi</span><span class="nota-value">${currentNota.klaim.asal||'-'}</span></div>`; if(currentNota.klaim && currentNota.klaim.info) html+=`<div style="font-size:12px; color:#666;">${currentNota.klaim.info}</div>`;
             // Password/pola perangkat sengaja tidak ditampilkan pada nota pelanggan.
-            html+=`</div><div class="nota-section"><div class="nota-section-title">📋 Detail Service</div>`;
-            html+=`<div><strong>Keluhan:</strong> ${currentNota.keluhan}</div>`;
+            if(currentType==='jual' && currentNota.jual){ html+=`</div><div class="nota-section"><div class="nota-section-title">🛍️ Barang</div>`; currentNota.jual.items.forEach(it=>{ html+=`<div class="nota-row"><span class="nota-label">${it.qty}x ${it.nama}<br><small>@ Rp ${formatRupiah(it.harga)}</small></span><span class="nota-value">Rp ${formatRupiah(it.qty*it.harga)}</span></div>`; }); if(currentNota.metodeBayar) html+=`<div style="margin-top:6px;"><strong>Pembayaran:</strong> ${escapeHtml(currentNota.metodeBayar)}</div>`; } else { html+=`</div><div class="nota-section"><div class="nota-section-title">📋 Detail Service</div>`;
+            html+=`<div><strong>Keluhan:</strong> ${currentNota.keluhan}</div>`; }
             if(currentNota.kelengkapan?.length) html+=`<div style="margin-top:5px;"><strong>Kelengkapan:</strong> ${currentNota.kelengkapan.join(', ')}</div>`;
             if(currentNota.kondisi?.length) html+=`<div style="margin-top:5px;"><strong>Kondisi Fisik:</strong> ${currentNota.kondisi.join(', ')}</div>`;
             if(currentNota.fotoDevice) { let imgSrc = currentNota.fotoDevice.type === 'file' && isCapacitor() ? currentNota.fotoDevice.path : currentNota.fotoDevice.type === 'base64' ? currentNota.fotoDevice.data : ''; if(imgSrc && (isSafeImg(imgSrc) || currentNota.fotoDevice.type === 'file')) html+=`<div style="margin-top:8px;"><img src="${imgSrc}" style="max-width:100%; max-height:100px; border-radius:8px;"></div>`; }
             if(currentNota.catatan) html+=`<div style="margin-top:5px;"><strong>📝 Catatan:</strong> ${currentNota.catatan}</div>`;
             if(currentType==='diagnosa' && currentNota.diagnosa){ html+=`<div style="margin-top:10px;"><strong>🔍 Hasil Diagnosa:</strong> ${currentNota.diagnosa.hasil||'-'}</div>`; if(currentNota.diagnosa.sparepart) html+=`<div><strong>Sparepart:</strong> ${currentNota.diagnosa.sparepart}</div>`;
-                { const dg = currentNota.diagnosa; if (dg.hargaSparepart > 0 || dg.biayaJasa > 0) html += `<div style="margin-top:4px;">${dg.hargaSparepart > 0 ? `Harga sparepart: Rp ${formatRupiah(dg.hargaSparepart)}<br>` : ''}${dg.biayaJasa > 0 ? `Biaya jasa: Rp ${formatRupiah(dg.biayaJasa)}` : ''}</div>`; } let stat={bisa:'✅ Bisa diperbaiki',tidak:'❌ Tidak bisa diperbaiki',pending:'⏳ Menunggu konfirmasi',setuju:'🤝 Disetujui pelanggan'}; html+=`<div><strong>Status:</strong> ${stat[currentNota.diagnosa.status]||currentNota.diagnosa.status}</div>`; }
-            if(currentType==='selesai' && currentNota.selesai){ html+=`<div style="margin-top:10px;"><strong>✅ Detail Perbaikan:</strong> ${currentNota.selesai.detail||'-'}</div>`; let stat={normal:'✅ Berfungsi normal',partial:'⚠️ Berfungsi sebagian',tidak:'❌ Tidak bisa'}; html+=`<div><strong>Status:</strong> ${stat[currentNota.selesai.status]||currentNota.selesai.status}</div>`; if(currentNota.selesai.siapAmbil) html+=`<div><strong>Siap diambil:</strong> ${currentNota.selesai.siapAmbil}</div>`; }
+                { const dg = currentNota.diagnosa; if (dg.hargaSparepart > 0 || dg.biayaJasa > 0) html += `<div style="margin-top:4px;">${dg.hargaSparepart > 0 ? `Harga sparepart: Rp ${formatRupiah(dg.hargaSparepart)}<br>` : ''}${dg.biayaJasa > 0 ? `Biaya jasa: Rp ${formatRupiah(dg.biayaJasa)}` : ''}</div>`; } let stat={bisa:'✅ Bisa diperbaiki',tidak:'❌ Tidak bisa diperbaiki',pending:'⏳ Menunggu konfirmasi',setuju:'🤝 Disetujui pelanggan',sparepart:'📦 Menunggu sparepart',proses:'🔧 Sedang dikerjakan'}; html+=`<div><strong>Status:</strong> ${stat[currentNota.diagnosa.status]||currentNota.diagnosa.status}</div>`; }
+            if(currentType==='selesai' && currentNota.selesai){ html+=`<div style="margin-top:10px;"><strong>✅ Detail Perbaikan:</strong> ${currentNota.selesai.detail||'-'}</div>`; let stat={normal:'✅ Berfungsi normal',partial:'⚠️ Berfungsi sebagian',tidak:'❌ Tidak bisa'}; html+=`<div><strong>Status:</strong> ${stat[currentNota.selesai.status]||currentNota.selesai.status}</div>`; if(currentNota.selesai.siapAmbil) html+=`<div><strong>Siap diambil:</strong> ${currentNota.selesai.siapAmbil}</div>`; if(currentNota.selesai.garansi>0) html+=`<div><strong>Garansi:</strong> ${currentNota.selesai.garansi} hari setelah unit diambil</div>`; }
             if(currentType==='ambil' && currentNota.ambil){ if(currentNota.ambil.status==='diambil') html+=`<div style="margin-top:10px; background:#e8f5e9; padding:8px; border-radius:8px;"><strong>✅ Status:</strong> Sudah diambil oleh pelanggan</div>`; else html+=`<div style="margin-top:10px; background:#ffebee; padding:8px; border-radius:8px;"><strong>❌ Status:</strong> Dibatalkan<br>Alasan: ${escapeHtml(currentNota.ambil.alasan||'-')}</div>`; }
+            if(currentType==='ambil' && currentNota.ambil && currentNota.ambil.status==='diambil'){ const gh = garansiHari(historyData.filter(h => (h.originalId||h.id)===currentNota.originalId)); if(gh>0){ const ge = new Date(new Date(currentNota.timestamp).getTime()+gh*86400000).toLocaleDateString('id-ID'); html+=`<div style="margin-top:6px;"><strong>🛡️ Garansi:</strong> ${gh} hari (s/d ${ge})</div>`; } }
             if(currentType==='langsung' && currentNota.langsung){ const L=currentNota.langsung; html+=`<div style="margin-top:10px;"><strong>🔧 Detail Perbaikan:</strong> ${L.detail||'-'}</div>`; if(L.sparepart) html+=`<div><strong>Sparepart:</strong> ${L.sparepart}</div>`; if(L.garansi>0){ const gd=new Date(new Date(currentNota.timestamp).getTime()+L.garansi*86400000).toLocaleDateString('id-ID'); html+=`<div><strong>Garansi:</strong> ${L.garansi} hari (s/d ${gd})</div>`; } if(currentNota.metodeBayar) html+=`<div><strong>Pembayaran:</strong> ${escapeHtml(currentNota.metodeBayar)}</div>`; html+=`<div style="margin-top:10px; background:#e8f5e9; padding:8px; border-radius:8px;"><strong>✅ Status:</strong> Selesai &amp; langsung diambil pelanggan</div>`; }
             html+=`</div>`;
             if(currentNota.totalBiaya>0){ html+=`<div class="nota-total"><div class="nota-row"><span class="nota-label">${biayaLabel(currentType)}</span><span class="nota-value">Rp ${formatRupiah(currentNota.totalBiaya)}</span></div>`; if(currentNota.dp>0) html+=`<div class="nota-row"><span class="nota-label">DP / Panjar</span><span class="nota-value">Rp ${formatRupiah(currentNota.dp)}</span></div><div class="nota-row"><span class="nota-label">Sisa Pembayaran</span><span class="nota-value">Rp ${formatRupiah(currentNota.sisa)}</span></div>`; html+=`</div>`; }
             if(currentNota.estimasiAwal>0 && currentNota.estimasiAwal!==currentNota.totalBiaya) html+=`<div style="font-size:12px; color:#666; margin-top:6px;">Estimasi awal diagnosa: Rp ${formatRupiah(currentNota.estimasiAwal)}</div>`;
             if(currentType==='diagnosa') html+=`<div style="font-size:12px; color:#666; margin-top:6px;">⚠️ Estimasi dapat berubah. Kami akan konfirmasi bila ada selisih biaya.</div>`;
-            if(currentNota.timeline && currentNota.timeline.length>1){ html+=`<div class="timeline"><div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:8px;">📅 Timeline Service</div>`; currentNota.timeline.forEach(item=>{ let name={terima:'📥 Diterima',diagnosa:'🔍 Diagnosa',selesai:'✅ Selesai',ambil:'📤 Diambil/Dibatalkan',langsung:'⚡ Servis langsung'}[item.status]||item.status; if(item.setuju) name += ' (disetujui pelanggan)'; html+=`<div style="font-size:11px; color:#666; margin-bottom:6px; display:flex; align-items:baseline; gap:8px;"><span style="width:8px; height:8px; border-radius:50%; background:var(--primary);"></span><span style="font-family:monospace; font-size:10px; color:#999;">${new Date(item.timestamp).toLocaleString('id-ID')}</span> <strong>${name}</strong></div>`; }); html+=`</div>`; }
+            if(currentNota.timeline && currentNota.timeline.length>1){ html+=`<div class="timeline"><div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:8px;">📅 Timeline Service</div>`; currentNota.timeline.forEach(item=>{ let name={terima:'📥 Diterima',diagnosa:'🔍 Diagnosa',selesai:'✅ Selesai',ambil:'📤 Diambil/Dibatalkan',langsung:'⚡ Servis langsung'}[item.status]||item.status; const subMap = {setuju:'disetujui pelanggan', sparepart:'menunggu sparepart', proses:'sedang dikerjakan'}; if (item.status === 'diagnosa' && subMap[item.sub]) name += ' (' + subMap[item.sub] + ')'; else if(item.setuju) name += ' (disetujui pelanggan)'; html+=`<div style="font-size:11px; color:#666; margin-bottom:6px; display:flex; align-items:baseline; gap:8px;"><span style="width:8px; height:8px; border-radius:50%; background:var(--primary);"></span><span style="font-family:monospace; font-size:10px; color:#999;">${new Date(item.timestamp).toLocaleString('id-ID')}</span> <strong>${name}</strong></div>`; }); html+=`</div>`; }
             let footer = (footers[footerKey()]?.enabled && footers[footerKey()]?.text) ? footers[footerKey()].text : '';
             if(footer) html+=`<div class="nota-footer">${escapeHtml(footer).replace(/\n/g,'<br>')}</div>`;
             if((currentType==='terima' || currentType==='ambil' || currentType==='langsung') && skText.trim()) html+=`<div class="syarat-section"><strong>📜 SYARAT & KETENTUAN</strong>${escapeHtml(skText).replace(/\n/g,'<br>')}</div>`;
@@ -394,14 +399,14 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             document.getElementById('notaContent').className = `nota-paper ${paperClass}`;
         }
 
-        function isNotaLocked() { return currentNota && (currentNota.type === 'ambil' || currentNota.type === 'langsung'); }
+        function isNotaLocked() { return currentNota && (currentNota.type === 'ambil' || currentNota.type === 'langsung' || currentNota.type === 'jual'); }
         function updateWorkflowButtons() {
             let c = document.getElementById('workflowButtons');
             if(!currentNota){ c.innerHTML=''; return; }
             if(isNotaLocked()){ c.innerHTML='<div style="text-align:center; padding:10px; background:#ffebee; border-radius:12px; color:#c62828;">🔒 Nota sudah selesai (diambil/dibatalkan). Tidak dapat diedit lagi.</div>'; return; }
             let btns='';
             if(currentType==='terima') btns='<button class="btn-workflow diagnosa" onclick="app.lanjutKe(\'diagnosa\')">🔍 Lanjut ke Diagnosa</button>';
-            else if(currentType==='diagnosa') btns='<button class="btn-workflow selesai" onclick="app.lanjutKe(\'selesai\')">✅ Lanjut ke Selesai</button>';
+            else if(currentType==='diagnosa') btns='<button class="btn-workflow selesai" onclick="app.lanjutKe(\'selesai\')">✅ Lanjut ke Selesai</button>' + '<button class="btn-workflow diagnosa" style="margin-top:8px;" onclick="app.lanjutKe(\'diagnosa\')">🔄 Update Status / Sparepart</button>';
             else if(currentType==='selesai') btns='<button class="btn-workflow ambil" onclick="app.lanjutKe(\'ambil\')">📤 Lanjut ke Ambil</button>';
             c.innerHTML = btns ? `<div style="margin-bottom:10px; font-size:13px;">📌 Lanjutkan ke tahap berikutnya:</div>${btns}` : '';
         }
@@ -420,6 +425,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             if (currentNota.metodeBayar) document.getElementById('metodeBayar').value = currentNota.metodeBayar;
             hitungSisa();
             document.getElementById('estimasi').value = currentNota.estimasi||'';
+            klaimMode = !!currentNota.klaim; if (currentNota.klaim) { document.getElementById('klaimAsal').value = unesc(currentNota.klaim.asal || ''); document.getElementById('klaimInfo').textContent = unesc(currentNota.klaim.info || ''); }
             document.getElementById('catatan').value = currentNota.catatan||'';
             let pwd = currentNota.passwordDevice || '';
             document.getElementById('passwordDevice').value = pwd;
@@ -428,8 +434,8 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             if(currentNota.kondisi){ document.querySelectorAll('.kondisi-checkbox').forEach(cb => cb.classList.remove('active')); currentNota.kondisi.forEach(k => { let el = Array.from(document.querySelectorAll('.kondisi-checkbox')).find(c => c.dataset.value === k); if(el) el.classList.add('active'); }); let lainnya = currentNota.kondisi.filter(k => !['Penyok','Lecet','Retak','Basah','Lainnya'].includes(k)).join(', '); document.getElementById('kondisiLainnya').value = lainnya; }
             if(currentNota.fotoDevice) { if (currentNota.fotoDevice.type === 'base64') { fotoDeviceData = currentNota.fotoDevice.data; fotoDevicePath = null; let p = document.getElementById('fotoPreview'); p.innerHTML = `<img src="${fotoDeviceData}" style="max-width:100%; max-height:100px;">`; p.classList.add('show'); } else if (currentNota.fotoDevice.type === 'file') { fotoDevicePath = currentNota.fotoDevice.path; fotoDeviceData = null; let p = document.getElementById('fotoPreview'); p.innerHTML = `<img src="${fotoDevicePath}" style="max-width:100%; max-height:100px;">`; p.classList.add('show'); } }
             if(currentNota.kelengkapan) document.querySelectorAll('#kelengkapanSection input[type="checkbox"]').forEach(cb => cb.checked = currentNota.kelengkapan.includes(cb.value));
-            if(tipeBaru==='diagnosa'){ document.getElementById('hasilDiagnosa').value = ''; document.getElementById('sparepart').value = ''; document.getElementById('statusDiagnosa').value = 'bisa'; document.getElementById('hargaSparepart').value = ''; document.getElementById('biayaJasa').value = ''; }
-            else if(tipeBaru==='selesai'){ document.getElementById('detailPerbaikan').value = ''; document.getElementById('statusSelesai').value = 'normal'; document.getElementById('siapAmbil').value = ''; }
+            if(tipeBaru==='diagnosa'){ const dd = currentNota.type === 'diagnosa' ? currentNota.diagnosa : null; document.getElementById('hasilDiagnosa').value = dd ? unesc(dd.hasil) : ''; document.getElementById('sparepart').value = dd ? unesc(dd.sparepart) : ''; document.getElementById('statusDiagnosa').value = dd ? dd.status : 'bisa'; document.getElementById('hargaSparepart').value = dd && dd.hargaSparepart ? dd.hargaSparepart : ''; document.getElementById('biayaJasa').value = dd && dd.biayaJasa ? dd.biayaJasa : ''; }
+            else if(tipeBaru==='selesai'){ document.getElementById('detailPerbaikan').value = ''; document.getElementById('statusSelesai').value = 'normal'; document.getElementById('siapAmbil').value = ''; document.getElementById('garansiSelesai').value = 0; }
             else if(tipeBaru==='ambil'){ selectAmbilStatus('diambil'); document.getElementById('alasanBatal').value = 'Tidak bisa diperbaiki'; }
             selectType(tipeBaru);
             window._lanjutOriginalId = currentNota.originalId || currentNota.id;
@@ -453,7 +459,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             if(!no){ showToast('Nomor HP pelanggan kosong, tidak bisa kirim WhatsApp'); return; }
             if(mode==='teks'){
                 let template = localStorage.getItem('wa_template') || `*{toko}*\n━━━━━━━━━━━━━━━\n{type_badge}\n━━━━━━━━━━━━━━━\n\n🆔 No: *{nota_id}*\n📅 {tanggal} | ⏰ {jam}\n\n👤 *Pelanggan:* {nama}\n📱 *Device:* {device}\n\n📋 *Keluhan:*\n{keluhan}\n\n{kelengkapan_line}\n💰 *Estimasi Biaya:* Rp {biaya}\n⏳ *Estimasi Waktu:* {estimasi}\n\n📝 *Catatan:* {catatan}\n\n━━━━━━━━━━━━\n{footer}`;
-                let badge = {terima:'📥 *NOTA PENERIMAAN*',diagnosa:'🔍 *HASIL DIAGNOSA*',selesai:'✅ *NOTA SELESAI*',langsung:'⚡ *NOTA SERVIS LANGSUNG*',ambil:currentNota.ambil?.status==='batal'?'❌ *DIBATALKAN*':'📤 *NOTA AMBIL*'}[currentType]||'📋 *NOTA SERVICE*';
+                let badge = {terima:'📥 *NOTA PENERIMAAN*',diagnosa:'🔍 *HASIL DIAGNOSA*',selesai:'✅ *NOTA SELESAI*',jual:'🛍️ *NOTA PENJUALAN*',langsung:'⚡ *NOTA SERVIS LANGSUNG*',ambil:currentNota.ambil?.status==='batal'?'❌ *DIBATALKAN*':'📤 *NOTA AMBIL*'}[currentType]||'📋 *NOTA SERVICE*';
                 let kelengkapanLine = currentNota.kelengkapan?.length ? `📦 *Kelengkapan:* ${currentNota.kelengkapan.join(', ')}` : '📦 *Kelengkapan:* -';
                 let msg = template.replace(/{toko}/g, tokoSettings.nama||'Service HP').replace(/{type_badge}/g, badge).replace(/{nota_id}/g, currentNota.notaId).replace(/{tanggal}/g, currentNota.tanggal).replace(/{jam}/g, currentNota.jam).replace(/{nama}/g, () => unesc(currentNota.nama)).replace(/{device}/g, () => unesc(currentNota.device)).replace(/{keluhan}/g, () => unesc(currentNota.keluhan)).replace(/{kelengkapan_line}/g, kelengkapanLine).replace(/{biaya}/g, formatRupiah(currentNota.totalBiaya)).replace(/{estimasi}/g, currentNota.estimasi||'-').replace(/{catatan}/g, () => unesc(currentNota.catatan)||'-').replace(/{footer}/g, footers[footerKey()]?.enabled?footers[footerKey()].text:'');
                 msg = msg.replace('*Estimasi Biaya:*', `*${biayaLabel(currentType)}:*`);
@@ -521,9 +527,12 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 if (d.slogan) L.push(`[C]${clean(d.slogan)}`);
                 if (d.telepon) L.push(`[C]Telp: ${clean(d.telepon)}`);
                 L.push(`[C]${'='.repeat(n)}`);
-                L.push(`[L]No      : ${clean(d.id)}`, `[L]Tanggal : ${clean(d.tanggal)}`, `[L]Nama    : ${clean(d.nama)}`, `[L]HP      : ${clean(d.nohp)}`, `[L]Device  : ${clean(d.device)}`);
-                L.push(`[C]${sep}`, '[L]<b>Keluhan:</b>', `[L]${clean(d.keluhan)}`, `[C]${sep}`);
+                L.push(`[L]No      : ${clean(d.id)}`, `[L]Tanggal : ${clean(d.tanggal)}`, `[L]Nama    : ${clean(d.nama)}`, `[L]HP      : ${clean(d.nohp)}`);
+                if (!d.items) L.push(`[L]Device : ${clean(d.device)}`);
+                if (d.klaim) L.push('[L]<b>KLAIM GARANSI</b>', `[L]${clean(d.klaim)}`);
+                if (d.items) { L.push(`[C]${sep}`); d.items.forEach(it => { L.push(`[L]${it.qty}x ${clean(it.nama)}`, `[L]  @${rp(it.harga)} [R]${rp(it.qty * it.harga)}`); }); if (d.metode) L.push(`[L]Bayar : ${clean(d.metode)}`); L.push(`[C]${sep}`); } else { L.push(`[C]${sep}`, '[L]<b>Keluhan:</b>', `[L]${clean(d.keluhan)}`, `[C]${sep}`); }
                 if (d.detail) { L.push(`[L]<b>${d.detailLabel || 'Detail'}:</b>`, `[L]${clean(d.detail)}`); if (d.sparepart) L.push(`[L]Sparepart: ${clean(d.sparepart)}`); if (d.garansi) L.push(`[L]Garansi  : ${clean(d.garansi)}`); if (d.metode) L.push(`[L]Bayar    : ${clean(d.metode)}`); L.push(`[C]${sep}`); }
+                if (!d.detail && d.garansi) L.push(`[L]Garansi : ${clean(d.garansi)}`, `[C]${sep}`);
                 if (d.biaya > 0) { (d.rincian || []).forEach(r => L.push(`[L]${r[0]} [R]${rp(r[1])}`)); L.push(`[L]${d.labelBiaya || 'Total'} [R]${rp(d.biaya)}`); if (d.dp > 0) { L.push(`[L]DP      [R]${rp(d.dp)}`, `[L]<b>Sisa</b>    [R]<b>${rp(d.sisa)}</b>`); } L.push(`[C]${sep}`); }
                 if (d.noteEstimasi) L.push(`[C]${clean(d.noteEstimasi)}`);
                 if (d.footer) L.push(`[C]${clean(d.footer)}`);
@@ -607,11 +616,22 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             hideLoading();
         }
 
+        function tagsToPlain(text, width) {
+            const wrap = t => { const out = []; let cur = ''; t.split(' ').forEach(w => { if ((cur + ' ' + w).trim().length > width) { if (cur) out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); }); if (cur) out.push(cur); return out.length ? out : ['']; };
+            return text.split('\n').flatMap(raw => {
+                const line = raw.replace(/<[^>]+>/g, ''); let m;
+                if ((m = line.match(/^\[L\](.*?)\s*\[R\](.*)$/))) return [m[1] + ' '.repeat(Math.max(1, width - m[1].length - m[2].length)) + m[2]];
+                if ((m = line.match(/^\[C\](.*)$/))) return wrap(m[1]).map(t => ' '.repeat(Math.max(0, Math.floor((width - t.length) / 2))) + t);
+                if ((m = line.match(/^\[L\](.*)$/))) return wrap(m[1]);
+                return [line];
+            }).join('\n');
+        }
+        async function printFromPreview() { closeThermalPreview(); await printBluetooth(); }
         function previewThermal() {
             if (!currentNota) { showToast('Buat nota terlebih dahulu'); return; }
             const data = { ...thermalExtra(), toko: tokoSettings.nama || 'Service HP', slogan: tokoSettings.slogan || '', telepon: tokoSettings.telepon || '', id: currentNota.notaId, tanggal: currentNota.tanggal + ' ' + currentNota.jam, nama: unesc(currentNota.nama), nohp: currentNota.nohp || '-', device: unesc(currentNota.device), keluhan: unesc(currentNota.keluhan), biaya: currentNota.totalBiaya, dp: currentNota.dp, sisa: currentNota.sisa, footer: footers[footerKey()]?.enabled ? footers[footerKey()].text : '' };
-            let lines = []; lines.push('==============================='); lines.push(data.toko.toUpperCase()); if (data.slogan) lines.push(data.slogan); if (data.telepon) lines.push(`📞 ${data.telepon}`); lines.push('==============================='); lines.push(`No   : ${data.id}`); lines.push(`Tgl  : ${data.tanggal}`); lines.push(`Nama : ${data.nama}`); lines.push(`HP   : ${data.nohp}`); lines.push(`Device: ${data.device}`); lines.push('-------------------------------'); lines.push('Keluhan:'); lines.push(data.keluhan); lines.push('-------------------------------'); if (data.biaya > 0) lines.push(`${data.labelBiaya || 'Total'}: Rp ${formatRupiah(data.biaya)}`); lines.push('-------------------------------'); lines.push('Terima Kasih'); if (data.footer) lines.push(data.footer); lines.push('Simpan Nota Ini'); lines.push('===============================');
-            document.getElementById('thermalPreviewText').textContent = lines.join('\n');
+            const width = (printer.paperSize === '80' || printer.paperSize === '75') ? 48 : 32;
+            document.getElementById('thermalPreviewText').textContent = tagsToPlain(printer.buildText(data), width);
             document.getElementById('thermalPreviewModal').classList.add('active');
         }
         function closeThermalPreview() { document.getElementById('thermalPreviewModal').classList.remove('active'); }
@@ -629,33 +649,90 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         }
 
         function thermalExtra() {
-            const n = currentNota || {}; const x = { detailLabel: '', detail: '', sparepart: '', garansi: '', metode: '', labelBiaya: biayaLabel(n.type), noteEstimasi: n.type === 'diagnosa' ? 'Estimasi dapat berubah. Konfirmasi bila ada selisih.' : '', rincian: [] };
+            const n = currentNota || {}; const x = { detailLabel: '', detail: '', sparepart: '', garansi: '', metode: '', labelBiaya: biayaLabel(n.type), noteEstimasi: n.type === 'diagnosa' ? 'Estimasi dapat berubah. Konfirmasi bila ada selisih.' : '', rincian: [], items: null, klaim: '' };
             if (n.type === 'langsung' && n.langsung) { x.detailLabel = 'Perbaikan'; x.detail = n.langsung.detail; x.sparepart = n.langsung.sparepart; if (n.langsung.garansi > 0) { const end = new Date(new Date(n.timestamp).getTime() + n.langsung.garansi * 86400000).toLocaleDateString('id-ID'); x.garansi = `${n.langsung.garansi} hari (s/d ${end})`; } x.metode = n.metodeBayar || ''; }
             else if (n.type === 'selesai' && n.selesai) { x.detailLabel = 'Perbaikan'; x.detail = n.selesai.detail; }
             else if (n.type === 'diagnosa' && n.diagnosa) { x.detailLabel = 'Diagnosa'; x.detail = n.diagnosa.hasil; x.sparepart = n.diagnosa.sparepart; if (n.diagnosa.hargaSparepart > 0) x.rincian.push(['Sparepart', n.diagnosa.hargaSparepart]); if (n.diagnosa.biayaJasa > 0) x.rincian.push(['Jasa', n.diagnosa.biayaJasa]); }
+            if (n.type === 'selesai' && n.selesai && n.selesai.garansi > 0) x.garansi = `${n.selesai.garansi} hari`;
+            if (n.type === 'ambil' && n.ambil && n.ambil.status === 'diambil') { const gh = garansiHari(historyData.filter(h => (h.originalId || h.id) === n.originalId)); if (gh > 0) x.garansi = `${gh} hari (s/d ${new Date(new Date(n.timestamp).getTime() + gh * 86400000).toLocaleDateString('id-ID')})`; }
+            if (n.type === 'jual' && n.jual) { x.items = n.jual.items.map(it => ({ nama: unesc(it.nama), qty: it.qty, harga: it.harga })); x.metode = n.metodeBayar || ''; }
+            if (n.klaim) x.klaim = `Nota asal ${unesc(n.klaim.asal || '-')}`;
             return x;
         }
-        function biayaLabel(t) { return (t === 'terima' || t === 'diagnosa') ? 'Estimasi Biaya' : 'Biaya Akhir'; }
+        function biayaLabel(t) { if (t === 'jual') return 'Total'; return (t === 'terima' || t === 'diagnosa') ? 'Estimasi Biaya' : 'Biaya Akhir'; }
         function hitungEstimasi() {
             const sp = parseFloat(document.getElementById('hargaSparepart').value) || 0, js = parseFloat(document.getElementById('biayaJasa').value) || 0;
             if (sp || js) document.getElementById('totalBiaya').value = sp + js;
             hitungSisa();
         }
-        function footerKey() { return currentType === 'langsung' ? 'ambil' : currentType; }
+        function tambahItemJual() {
+            const d = document.createElement('div'); d.className = 'jual-row'; d.style.cssText = 'padding:8px; margin-bottom:8px; border-radius:10px; background:rgba(128,128,128,.12);';
+            d.innerHTML = `<input type="text" class="j-nama" placeholder="Nama barang (contoh: Tempered Glass A12)" style="width:100%; margin-bottom:6px;" oninput="app.hitungJual()"><div style="display:grid; grid-template-columns:1fr 2fr 2fr auto; gap:6px; align-items:center;"><input type="number" class="j-qty" min="1" value="1" oninput="app.hitungJual()"><input type="number" class="j-harga" min="0" step="500" placeholder="Harga satuan" oninput="app.hitungJual()"><input type="number" class="j-modal" min="0" step="500" placeholder="Modal satuan" oninput="app.hitungJual()"><button type="button" onclick="this.closest('.jual-row').remove(); app.hitungJual()">✖</button></div>`;
+            document.getElementById('jualItems').appendChild(d);
+        }
+        function bacaItemJual() {
+            return Array.from(document.querySelectorAll('#jualItems .jual-row')).map(r => ({ nama: r.querySelector('.j-nama').value.trim(), qty: Math.max(parseInt(r.querySelector('.j-qty').value) || 1, 1), harga: parseFloat(r.querySelector('.j-harga').value) || 0, modal: parseFloat(r.querySelector('.j-modal').value) || 0 })).filter(it => it.nama);
+        }
+        function hitungJual() {
+            const items = bacaItemJual();
+            document.getElementById('totalBiaya').value = items.reduce((t, it) => t + it.qty * it.harga, 0);
+            document.getElementById('modal').value = items.reduce((t, it) => t + it.qty * it.modal, 0);
+            document.getElementById('dp').value = 0; hitungSisa();
+        }
+        function klaimOff() { klaimMode = false; }
+        function mulaiKlaim() { klaimMode = true; selectType('terima'); showToast('Klaim garansi: isi No. Nota asal atau No. HP lalu tekan Cek'); }
+        function garansiHari(arr) { return Math.max(0, ...arr.map(r => Number((r.langsung && r.langsung.garansi) || (r.selesai && r.selesai.garansi) || 0))); }
+        function recSelesai(arr) { return arr.find(r => r.type === 'langsung' || (r.type === 'ambil' && r.ambil && r.ambil.status === 'diambil')); }
+        function cariGaransi() {
+            const q = document.getElementById('klaimAsal').value.trim(), info = document.getElementById('klaimInfo');
+            if (!q) { info.textContent = ''; return; }
+            const key = q.toLowerCase(), isPhone = !/[a-z]/i.test(q) && q.replace(/\D/g, '').length >= 9;
+            const grp = id => historyData.filter(h => (h.originalId || h.id) === id).sort((x, y) => new Date(x.timestamp) - new Date(y.timestamp));
+            let origin = null;
+            const byId = historyData.find(h => [h.id, h.notaId, h.originalId].some(x => String(x || '').toLowerCase() === key));
+            if (byId) origin = byId.originalId || byId.id;
+            else if (isPhone) {
+                const np = normalizePhone(q), ids = [];
+                historyData.forEach(h => { if (h.nohp && normalizePhone(h.nohp) === np && !h.klaim) { const o = h.originalId || h.id; if (!ids.includes(o)) ids.push(o); } });
+                origin = ids.find(o => recSelesai(grp(o))) || ids[0] || null;
+            }
+            if (!origin) { info.textContent = '❌ Nota / nomor tidak ditemukan di riwayat'; return; }
+            const arr = grp(origin), last = arr[arr.length - 1], done = recSelesai(arr), gh = garansiHari(arr);
+            document.getElementById('klaimAsal').value = origin;
+            document.getElementById('nama').value = unesc(last.nama); document.getElementById('nohp').value = last.nohp || '';
+            const parts = unesc(last.device).split(' '); document.getElementById('merek').value = parts[0] || ''; document.getElementById('model').value = parts.slice(1).join(' ');
+            let teks;
+            if (!done) teks = 'Servis asal belum selesai / belum diambil';
+            else if (gh <= 0) teks = 'Servis asal tidak punya garansi tercatat';
+            else { const end = new Date(new Date(done.timestamp).getTime() + gh * 86400000), sisa = Math.ceil((end - new Date()) / 86400000); teks = sisa > 0 ? `✅ Masih garansi: ${sisa} hari lagi (s/d ${end.toLocaleDateString('id-ID')})` : `❌ Garansi habis sejak ${end.toLocaleDateString('id-ID')}`; }
+            info.textContent = teks;
+            if (!document.getElementById('keluhan').value.trim()) document.getElementById('keluhan').value = 'Klaim garansi: ';
+            showToast('Data pelanggan diisi dari nota asal');
+        }
+        function footerKey() { return (currentType === 'langsung' || currentType === 'jual') ? 'ambil' : currentType; }
         function selectType(type) {
             currentType = type;
-            ['terima','diagnosa','selesai','ambil','langsung'].forEach(t=>{ document.getElementById(`btn${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t===type); });
+            ['terima','diagnosa','selesai','ambil','langsung','jual'].forEach(t=>{ document.getElementById(`btn${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t===type); });
             document.querySelectorAll('.step').forEach(s=>s.classList.toggle('active', s.dataset.step===type));
-            document.getElementById('formTitle').innerHTML = {terima:'📥 Nota Penerimaan',diagnosa:'🔍 Hasil Diagnosa',selesai:'✅ Nota Selesai',ambil:'📤 Nota Ambil/Batal',langsung:'⚡ Nota Servis Langsung'}[type];
+            document.getElementById('formTitle').innerHTML = {terima:'📥 Nota Penerimaan',diagnosa:'🔍 Hasil Diagnosa',selesai:'✅ Nota Selesai',ambil:'📤 Nota Ambil/Batal',langsung:'⚡ Nota Servis Langsung',jual:'🛍️ Nota Penjualan'}[type] + (klaimMode && type === 'terima' ? ' (Klaim Garansi)' : '');
             document.getElementById('kelengkapanSection').style.display = type==='terima'?'block':'none';
             document.getElementById('diagnosaSection').style.display = type==='diagnosa'?'block':'none';
             document.getElementById('selesaiSection').style.display = type==='selesai'?'block':'none';
             document.getElementById('ambilSection').style.display = type==='ambil'?'block':'none';
             document.getElementById('langsungSection').style.display = type==='langsung'?'block':'none';
             document.getElementById('labelTotalBiaya').textContent = biayaLabel(type) + ' (Rp)';
+            if (type === 'langsung' || type === 'jual') klaimMode = false;
+            document.getElementById('klaimSection').style.display = (klaimMode && type === 'terima') ? 'block' : 'none';
+            document.getElementById('btnKlaim').classList.toggle('active', klaimMode && type === 'terima');
+            document.getElementById('jualSection').style.display = type === 'jual' ? 'block' : 'none';
+            const jual = type === 'jual';
+            [['merek', '.row'], ['keluhan', '.form-group'], ['kondisiCheckboxGroup', '.form-group'], ['passwordDeviceText', '.form-group'], ['fotoPreview', '.form-group'], ['dp', '.form-group'], ['sisa', '.form-group'], ['modal', '.form-group'], ['estimasi', '.form-group']].forEach(([id, sl]) => { const el = document.getElementById(id), box = el && el.closest(sl); if (box) box.style.display = jual ? 'none' : ''; });
+            ['nama', 'merek', 'model', 'keluhan'].forEach(id => { document.getElementById(id).required = !jual; });
+            document.getElementById('totalBiaya').readOnly = jual;
+            if (jual && !document.querySelector('#jualItems .jual-row')) tambahItemJual();
         }
         function selectAmbilStatus(status) { currentStatus = status; document.getElementById('statusDiambil').classList.toggle('active', status==='diambil'); document.getElementById('statusBatal').classList.toggle('active', status==='batal'); document.getElementById('alasanBatalGroup').style.display = status==='batal'?'block':'none'; }
-        function resetForm() { document.getElementById('notaForm').reset(); document.querySelectorAll('.kondisi-checkbox').forEach(c => c.classList.remove('active')); document.getElementById('kondisiLainnya').value = ''; fotoDeviceData = null; fotoDevicePath = null; let p = document.getElementById('fotoPreview'); p.innerHTML = ''; p.classList.remove('show'); resetPattern(); document.getElementById('passwordDeviceText').value = ''; selectType('terima'); selectAmbilStatus('diambil'); hitungSisa(); localStorage.removeItem('nota_draft'); }
+        function resetForm() { document.getElementById('notaForm').reset(); document.querySelectorAll('.kondisi-checkbox').forEach(c => c.classList.remove('active')); document.getElementById('kondisiLainnya').value = ''; fotoDeviceData = null; fotoDevicePath = null; let p = document.getElementById('fotoPreview'); p.innerHTML = ''; p.classList.remove('show'); resetPattern(); document.getElementById('passwordDeviceText').value = ''; klaimMode = false; document.getElementById('klaimAsal').value = ''; document.getElementById('klaimInfo').textContent = ''; document.getElementById('jualItems').innerHTML = ''; selectType('terima'); selectAmbilStatus('diambil'); hitungSisa(); localStorage.removeItem('nota_draft'); }
         function buatNotaBaru() { resetForm(); document.getElementById('previewCard').classList.remove('active'); document.getElementById('formCard').classList.add('active'); currentNota = null; delete window._lanjutOriginalId; }
         function backToForm() { document.querySelectorAll('.history-card, .settings-card, .preview-card').forEach(c=>c.classList.remove('active')); document.getElementById('formCard').classList.add('active'); delete window._lanjutOriginalId; }
         function showHistory() { renderHistory(); document.querySelectorAll('.form-card, .preview-card, .settings-card').forEach(c=>c.classList.remove('active')); document.getElementById('historyCard').classList.add('active'); }
@@ -715,7 +792,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             let filtered = search ? historyData.filter(h => h.nama.toLowerCase().includes(search) || h.nohp.includes(search) || h.device.toLowerCase().includes(search)) : historyData;
             if(filter) filtered = filtered.filter(h => h.type === filter);
             let now = new Date(), bulanIni = historyData.filter(h => { let d = new Date(h.timestamp); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); }).length;
-            let selesai = historyData.filter(h => (h.type==='ambil' && h.ambil?.status==='diambil') || h.type==='langsung').length, pending = historyData.filter(h => h.type==='terima'||h.type==='diagnosa').length;
+            let selesai = historyData.filter(h => (h.type==='ambil' && h.ambil?.status==='diambil') || h.type==='langsung' || h.type==='jual').length, pending = historyData.filter(h => h.type==='terima'||h.type==='diagnosa').length;
             document.getElementById('statTotal').innerText = historyData.length; document.getElementById('statBulanIni').innerText = bulanIni; document.getElementById('statSelesai').innerText = selesai; document.getElementById('statPending').innerText = pending;
             let list = document.getElementById('historyList');
             if(!filtered.length){ list.innerHTML='<div style="text-align:center; padding:20px;">Tidak ada data</div>'; return; }
@@ -803,8 +880,8 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 arr.sort((x, y) => new Date(x.timestamp) - new Date(y.timestamp));
                 const last = arr[arr.length - 1];
                 let status = 'proses';
-                if (last.type === 'langsung') status = 'diambil'; else if (last.type === 'ambil') status = (last.ambil && last.ambil.status === 'batal') ? 'batal' : 'diambil';
-                return { id: last.originalId || last.id, nama: unesc(last.nama), device: unesc(last.device), total: Number(last.totalBiaya) || 0, dp: Number(last.dp) || 0, modal: Number(last.modal) || 0, metode: last.metodeBayar || '', status, ts: last.timestamp };
+                if (last.type === 'langsung' || last.type === 'jual') status = 'diambil'; else if (last.type === 'ambil') status = (last.ambil && last.ambil.status === 'batal') ? 'batal' : 'diambil';
+                return { id: last.originalId || last.id, nama: unesc(last.nama), device: last.type === 'jual' ? unesc(last.keluhan) : unesc(last.device), total: Number(last.totalBiaya) || 0, dp: Number(last.dp) || 0, modal: Number(last.modal) || 0, metode: last.metodeBayar || '', status, ts: last.timestamp, jenis: last.type === 'jual' ? 'jual' : (arr.some(r => r.klaim) ? 'klaim' : 'servis'), sub: (last.type === 'diagnosa' && last.diagnosa) ? last.diagnosa.status : '' };
             }).sort((x, y) => new Date(y.ts) - new Date(x.ts));
         }
         function ymKey(ts) { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
@@ -826,13 +903,13 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             const dpBatal = sum(batal, s => s.dp);
             const dpProses = sum(proses, s => s.dp), sisaProses = sum(proses, s => Math.max(s.total - s.dp, 0));
             const card = (l, v) => `<div style="flex:1 1 45%; padding:10px; border-radius:10px; background:rgba(128,128,128,.12);"><div style="font-size:11px; opacity:.7;">${l}</div><div style="font-weight:bold;">${v}</div></div>`;
-            const rows = selesai.map(s => `<tr><td>${escapeHtml(s.nama)}<br><small>${escapeHtml(s.device)}</small></td><td style="text-align:right;">${formatRupiah(s.total)}</td><td style="text-align:right;">${formatRupiah(s.modal)}</td><td style="text-align:right;">${formatRupiah(s.total - s.modal)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">Belum ada servis diambil bulan ini</td></tr>';
+            const rows = selesai.map(s => `<tr><td>${escapeHtml(s.nama)}<br><small>${escapeHtml(s.device)}${s.jenis === 'klaim' ? ' 🛡️ klaim' : ''}${s.jenis === 'jual' ? ' 🛍️' : ''}</small></td><td style="text-align:right;">${formatRupiah(s.total)}</td><td style="text-align:right;">${formatRupiah(s.modal)}</td><td style="text-align:right;">${formatRupiah(s.total - s.modal)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">Belum ada servis diambil bulan ini</td></tr>';
             box.innerHTML = `<div style="padding:12px; border-radius:12px; border:1px solid rgba(128,128,128,.3);">
                 <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><strong>📈 Laporan</strong><input type="month" id="laporanBulan" value="${bulan}" onchange="app.renderLaporan()" style="flex:1;"></div>
                 <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                    ${card('Servis diambil', selesai.length)}${card('Omzet', 'Rp ' + formatRupiah(omzet))}
+                    ${card('Transaksi selesai', selesai.length + ' (servis ' + selesai.filter(s => s.jenis === 'servis').length + ' | jual ' + selesai.filter(s => s.jenis === 'jual').length + ' | klaim ' + selesai.filter(s => s.jenis === 'klaim').length + ')')}${card('Omzet', 'Rp ' + formatRupiah(omzet))}
                     ${card('Modal sparepart', 'Rp ' + formatRupiah(modal))}${card('Laba kotor', 'Rp ' + formatRupiah(laba))}
-                    ${card('DP servis batal (' + batal.length + ')', 'Rp ' + formatRupiah(dpBatal))}${card('Servis berjalan (' + proses.length + ')', 'DP Rp ' + formatRupiah(dpProses) + '<br>Sisa Rp ' + formatRupiah(sisaProses))}
+                    ${card('DP servis batal (' + batal.length + ')', 'Rp ' + formatRupiah(dpBatal))}${card('Servis berjalan (' + proses.length + ')', 'DP Rp ' + formatRupiah(dpProses) + '<br>Sisa Rp ' + formatRupiah(sisaProses) + '<br>Menunggu sparepart: ' + proses.filter(s => s.sub === 'sparepart').length)}
                 </div>
                 <div style="overflow-x:auto; margin-top:10px;"><table style="width:100%; font-size:12px; border-collapse:collapse;"><thead><tr><th style="text-align:left;">Servis</th><th>Total</th><th>Modal</th><th>Laba</th></tr></thead><tbody>${rows}</tbody></table></div>
                 <small style="display:block; margin-top:8px; opacity:.7;">Servis dihitung 1x per nota (tahap terakhir). Omzet = servis berstatus diambil pada bulan tsb, dianggap lunas. DP servis batal ditampilkan terpisah; tentukan sendiri hangus atau refund.</small>
@@ -840,14 +917,14 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         }
         function exportLaporanCSV() {
             const data = groupServis(); if (!data.length) { showToast('Belum ada data'); return; }
-            let csv = '\ufeffIDServis,Tanggal,Nama,Device,Status,Total,DP,Sisa,Modal,Laba,Metode\n';
-            data.forEach(s => { csv += [csvCell(s.id), csvCell(new Date(s.ts).toISOString().slice(0, 10)), csvCell(s.nama), csvCell(s.device), csvCell(s.status), s.total, s.dp, Math.max(s.total - s.dp, 0), s.modal, s.status === 'diambil' ? s.total - s.modal : 0, csvCell(s.metode)].join(',') + '\n'; });
+            let csv = '\ufeffIDServis,Tanggal,Nama,Device,Status,Total,DP,Sisa,Modal,Laba,Metode,Jenis\n';
+            data.forEach(s => { csv += [csvCell(s.id), csvCell(new Date(s.ts).toISOString().slice(0, 10)), csvCell(s.nama), csvCell(s.device), csvCell(s.status), s.total, s.dp, Math.max(s.total - s.dp, 0), s.modal, s.status === 'diambil' ? s.total - s.modal : 0, csvCell(s.metode), csvCell(s.jenis)].join(',') + '\n'; });
             const name = `Laporan_Servis_${new Date().toISOString().slice(0, 10)}.csv`;
             if (isCapacitor()) { shareFile(name, textToB64(csv), 'text/csv', 'Laporan Servis').catch(e => showToast('Gagal: ' + e.message)); return; }
             const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); a.download = name; a.click();
         }
 
-        return { init, selectType, selectAmbilStatus, buatPreview, renderPreview, updateWorkflowButtons, lanjutKe, kirimWA, printBluetooth, generatePDF, exportCSV, exportJSON, restoreData, clearAllData, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, backToForm, buatNotaBaru, resetForm, importContact, handleFotoDevice, cleanPhoneInput, validatePhone, hitungSisa, loadHistoryItem, renderHistory, backupData: exportJSON, backupToDrive, previewThermal, closeThermalPreview, saveContact, savePrinterId, clearPrinterId, resetPattern, clearPattern, hitungEstimasi, showLaporan, renderLaporan, exportLaporanCSV };
+        return { init, selectType, selectAmbilStatus, buatPreview, renderPreview, updateWorkflowButtons, lanjutKe, kirimWA, printBluetooth, printFromPreview, generatePDF, exportCSV, exportJSON, restoreData, clearAllData, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, backToForm, buatNotaBaru, resetForm, importContact, handleFotoDevice, cleanPhoneInput, validatePhone, hitungSisa, loadHistoryItem, renderHistory, backupData: exportJSON, backupToDrive, previewThermal, closeThermalPreview, saveContact, savePrinterId, clearPrinterId, resetPattern, clearPattern, tambahItemJual, hitungJual, mulaiKlaim, klaimOff, cariGaransi, hitungEstimasi, showLaporan, renderLaporan, exportLaporanCSV };
     })();
 
     (async () => {
