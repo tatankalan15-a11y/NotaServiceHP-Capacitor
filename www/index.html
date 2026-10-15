@@ -53,7 +53,6 @@
         .btn-secondary { width: 100%; padding: 14px; border: 2px solid var(--border); border-radius: 12px; background: var(--card-bg); color: #666; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; }
         .nota-paper { background: white; border-radius: 15px; padding: 25px; margin-bottom: 20px; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: #333; transition: padding 0.2s; overflow: hidden; width: 100%; font-size: 12px; }
         .nota-paper::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 2px, transparent 2px, transparent 8px); pointer-events: none; z-index: 0; }
-        .nota-paper::after { content: "SERVICE HP"; position: absolute; bottom: 20px; right: 20px; font-size: 40px; font-weight: bold; color: rgba(0,0,0,0.05); transform: rotate(-15deg); pointer-events: none; z-index: 0; white-space: pre; }
         .nota-paper.terima { border: 3px solid var(--warning); background: linear-gradient(to bottom, #fff8e1 0%, #ffffff 100%); }
         .nota-paper.diagnosa { border: 3px solid #2196f3; background: linear-gradient(to bottom, #e3f2fd 0%, #ffffff 100%); }
         .nota-paper.selesai { border: 3px solid var(--info); background: linear-gradient(to bottom, #e0f7fa 0%, #ffffff 100%); }
@@ -78,8 +77,12 @@
         .nota-label { color: #666; font-weight: 500; }
         .nota-value { color: #333; font-weight: 600; text-align: right; max-width: 60%; word-break: break-word; }
         .nota-total { background: #f8f9fa; padding: 15px; border-radius: 10px; border: 2px solid #dee2e6; }
+        .nota-lunas { margin-top: 10px; padding: 10px; border-radius: 8px; text-align: center; font-weight: 800; font-size: 15px; letter-spacing: 1px; }
+        .nota-lunas small { display: block; margin-top: 3px; font-size: 12px; font-weight: 700; letter-spacing: 0; }
+        .nota-lunas.lunas { background: #e8f5e9; color: #2e7d32; border: 2px solid #4caf50; }
+        .nota-lunas.belum { background: #fff3e0; color: #e65100; border: 2px solid #ff9800; }
         .nota-footer { margin-top: 25px; padding-top: 15px; border-top: 1px dashed #dee2e6; text-align: center; font-size: 11px; color: #333; }
-        .syarat-section { margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 8px; font-size: 10px; color: #666; text-align: left; border-left: 3px solid var(--primary); }
+        .syarat-section { margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 8px; font-size: 11px; line-height: 1.45; color: #555; text-align: left; border-left: 3px solid var(--primary); }
         .action-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 15px; }
         .btn-action { padding: 12px; border: none; border-radius: 12px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: white; transition: all 0.3s; text-align: center; }
         .btn-wa-text { background: linear-gradient(135deg, #25d366 0%, #128c7e 100%); }
@@ -130,6 +133,15 @@
         .pattern-buttons { display: flex; gap: 10px; margin-top: 10px; }
         .pattern-buttons button { padding: 6px 12px; border: none; border-radius: 20px; background: var(--primary); color: white; font-size: 12px; cursor: pointer; }
         .pattern-info { font-size: 12px; margin-top: 8px; color: var(--text); text-align: center; }
+
+        .sp-item{border:1px solid rgba(128,128,128,.35);border-radius:12px;padding:10px;margin-bottom:8px;}
+        .sp-panel{border:2px solid var(--primary,#667eea);border-radius:12px;padding:10px;display:grid;gap:8px;}
+        .sp-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+        .sp-grid label{font-size:12px;}
+        .sp-btn{width:auto;padding:6px 10px;font-size:12px;margin:0;}
+        .sp-badge{font-size:10px;font-weight:bold;padding:2px 6px;border-radius:6px;color:#fff;vertical-align:middle;}
+        .sp-habis{background:#c62828;} .sp-tipis{background:#ef6c00;}
+        .sp-alert{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(239,108,0,.15);font-size:13px;font-weight:bold;}
     </style>
 <base target="_blank">
 </head>
@@ -214,12 +226,14 @@
             <div id="selesaiSection" style="display:none;"><div class="form-group"><label>Detail Perbaikan</label><textarea id="detailPerbaikan" rows="3"></textarea></div><div class="form-group"><label>Garansi (hari)</label><input type="number" id="garansiSelesai" min="0" step="1" value="0"></div><div class="form-group"><label>Status Hasil</label><select id="statusSelesai"><option value="normal">✅ BERFUNGSI NORMAL</option><option value="partial">⚠️ BERFUNGSI SEBAGIAN</option><option value="tidak">❌ TIDAK BISA</option></select></div><div class="form-group"><label>Siap Diambil</label><input type="text" id="siapAmbil"></div></div>
             <div id="ambilSection" style="display:none;"><div class="form-group"><label>Status Pengambilan</label><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><div class="status-option active" onclick="app.selectAmbilStatus('diambil')" id="statusDiambil">✅ DIAMBIL</div><div class="status-option" onclick="app.selectAmbilStatus('batal')" id="statusBatal">❌ DIBATALKAN</div></div></div><div id="alasanBatalGroup" style="display:none;"><div class="form-group"><label>Alasan</label><select id="alasanBatal"><option value="Tidak bisa diperbaiki">Tidak bisa diperbaiki</option><option value="Biaya mahal">Biaya mahal</option><option value="Sparepart tidak ada">Sparepart tidak ada</option><option value="Pelanggan membatalkan">Pelanggan membatalkan</option></select></div></div></div>
             <div id="langsungSection" style="display:none;"><div class="form-group"><label>Detail Perbaikan</label><textarea id="detailLangsung" rows="3" placeholder="Contoh: Ganti LCD, tes touch &amp; warna normal"></textarea></div><div class="form-group"><label>Sparepart Diganti</label><input type="text" id="sparepartLangsung" placeholder="Contoh: LCD original Samsung A12"></div><div class="form-group"><label>Garansi (hari)</label><input type="number" id="garansiLangsung" min="0" step="1" value="0"></div></div>
+            <div id="partPickerBox" style="display:none;"><div class="form-group"><label>🔩 Sparepart dari Stok <small id="partPickerNote"></small></label><div id="partRows"></div><button type="button" class="btn-secondary" onclick="app.spAddPartRow()">➕ Pakai Sparepart dari Stok</button><div id="partSummary" style="font-size:12px; margin-top:6px;"></div></div></div>
             <div class="row-3">
                 <div class="form-group"><label id="labelTotalBiaya">Total Biaya (Rp)</label><input type="number" id="totalBiaya" min="0" step="1000" oninput="app.hitungSisa()"></div>
                 <div class="form-group"><label>DP / Panjar (Rp)</label><input type="number" id="dp" min="0" step="1000" oninput="app.hitungSisa()"></div>
                 <div class="form-group"><label>Modal Sparepart (Rp) <small>- untuk hitung laba</small></label><input type="number" id="modal" min="0" step="1000"></div>
                 <div class="form-group"><label>Metode Bayar</label><select id="metodeBayar"><option value="Tunai">Tunai</option><option value="Transfer">Transfer</option><option value="QRIS">QRIS</option></select></div>
                 <div class="form-group"><label>Sisa (Rp)</label><input type="text" id="sisa" readonly style="background:#f0f0f0;"></div>
+                <div class="form-group"><label>Kurang bayar saat diambil (Rp) <small>- isi bila pelanggan belum melunasi; tercatat sebagai piutang</small></label><input type="number" id="kurangBayar" min="0" step="1000" value="0"></div>
             </div>
             <div class="form-group"><label>Estimasi Waktu</label><input type="text" id="estimasi" placeholder="1-2 hari"></div>
             <div class="form-group"><label>Catatan Tambahan</label><input type="text" id="catatan"></div>
@@ -242,12 +256,15 @@
             </div>
             <div class="printer-settings">
                 <details>
-                    <summary>⚙️ Pengaturan Printer Bluetooth</summary>
+                    <summary>⚙️ Pengaturan Printer Thermal</summary>
                     <div style="margin-top:8px;">
-                        <label style="font-size:12px;">ID Printer (opsional):</label>
-                        <input type="text" id="printerDeviceId" placeholder="Isi jika scan gagal" style="padding:8px; font-size:12px;">
+                        <button class="btn-secondary" onclick="app.pickPrinter()">🔎 Pilih Printer Bluetooth (ter-pairing)</button>
+                        <div id="printerList" style="font-size:12px; margin:5px 0;"></div>
+                        <label style="font-size:12px;">ID Printer: MAC Bluetooth atau IP printer LAN/WiFi</label>
+                        <input type="text" id="printerDeviceId" placeholder="AA:BB:CC:DD:EE:FF  atau  192.168.1.50:9100" style="padding:8px; font-size:12px;">
                         <button class="btn-secondary" onclick="app.savePrinterId()" style="margin-top:5px;">💾 Simpan ID</button>
                         <button class="btn-secondary" onclick="app.clearPrinterId()" style="margin-top:5px;">🗑️ Hapus ID</button>
+                        <button class="btn-secondary" onclick="app.testPrint()" style="margin-top:5px;">🖨️ Tes Cetak</button>
                     </div>
                 </details>
             </div>
@@ -264,9 +281,12 @@
         <div class="stats-grid"><div class="stat-card"><div class="stat-value" id="statTotal">0</div><div class="stat-label">Total Nota</div></div><div class="stat-card"><div class="stat-value" id="statBulanIni">0</div><div class="stat-label">Bulan Ini</div></div><div class="stat-card"><div class="stat-value" id="statSelesai">0</div><div class="stat-label">Selesai</div></div><div class="stat-card"><div class="stat-value" id="statPending">0</div><div class="stat-label">Pending</div></div></div>
         <div><input type="text" id="searchHistory" placeholder="Cari nama, no hp, atau device..." oninput="app.renderHistory()" style="margin-bottom:10px;"><select id="filterType" onchange="app.renderHistory()"><option value="">Semua Status</option><option value="terima">Terima</option><option value="diagnosa">Diagnosa</option><option value="selesai">Selesai</option><option value="jual">jual</option><option value="langsung">langsung</option><option value="ambil">Ambil</option></select></div>
         <div id="laporanBox" style="display:none; margin:12px 0;"></div>
+        <div id="advancedFinanceBox" style="display:none; margin:12px 0;"></div>
         <div id="historyList" style="max-height:400px; overflow-y:auto;"></div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+            <button class="btn-secondary" onclick="app.spOpen()">📦 Manajemen Sparepart</button>
             <button class="btn-secondary" onclick="app.showLaporan()">📈 Laporan & Pembukuan</button>
+            <button class="btn-secondary" onclick="app.showAdvancedFinance()">🧾 Keuangan Lanjutan</button>
             <button class="btn-secondary" onclick="app.exportCSV()">📊 Export CSV</button>
             <button class="btn-secondary" onclick="app.exportJSON()">💾 Backup JSON</button>
             <button class="btn-secondary" onclick="app.backupToDrive()">☁️ Backup ke Google Drive</button>
@@ -274,6 +294,12 @@
     </div>
 
     <!-- SETTINGS CARD -->
+    <!-- STOK SPAREPART CARD -->
+    <div class="history-card" id="stokCard">
+        <div class="form-title">📦 Manajemen Sparepart <button class="btn-icon" onclick="app.backToForm()" style="background:#f0f0f0;">✕</button></div>
+        <div id="stokBox"></div>
+    </div>
+
     <div class="settings-card" id="settingsCard">
         <div class="form-title">⚙️ Pengaturan Toko <button class="btn-icon" onclick="app.backToForm()" style="background:#f0f0f0;">✕</button></div>
         <div><label>Nama Toko</label><input type="text" id="settingNamaToko"></div>
@@ -299,7 +325,7 @@
 
 <div id="thermalPreviewModal" class="thermal-preview-modal">
     <div class="thermal-preview-content">
-        <div class="close-modal" style="display:flex; gap:8px; justify-content:flex-end;"><button onclick="app.printFromPreview()">🖨️ Cetak via Bluetooth</button><button onclick="app.closeThermalPreview()">Tutup</button></div>
+        <div class="close-modal" style="display:flex; gap:8px; justify-content:flex-end;"><button onclick="app.printFromPreview()">🖨️ Cetak Thermal</button><button onclick="app.closeThermalPreview()">Tutup</button></div>
         <pre id="thermalPreviewText"></pre>
     </div>
 </div>
