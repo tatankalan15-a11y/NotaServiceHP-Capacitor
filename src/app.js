@@ -131,19 +131,20 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         function sanitizeNota(n) {
             if (!n || typeof n !== 'object' || typeof n.id !== 'string' || !n.id) return null;
             const foto = n.fotoDevice; const c = sanitizeDeep({ ...n, fotoDevice: null });
-            ['totalBiaya','dp','sisa'].forEach(k => { c[k] = Number(n[k]) || 0; });
+            ['totalBiaya','dp','sisa','modal'].forEach(k => { c[k] = Number(n[k]) || 0; });
             if (foto && typeof foto === 'object') {
                 if (foto.type === 'base64' && isSafeImg(foto.data)) c.fotoDevice = { type: 'base64', data: foto.data };
                 else if (foto.type === 'file' && typeof foto.path === 'string') c.fotoDevice = { type: 'file', path: escapeHtml(foto.path) };
             }
             return c;
         }
+        function capWords(v) { return String(v || '').replace(/\S+/g, w => w === w.toLowerCase() ? w.charAt(0).toUpperCase() + w.slice(1) : w); }
         function normalizePhone(v) { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('62')) return d; if (d.startsWith('0')) return '62' + d.slice(1); if (d.startsWith('8')) return '62' + d; return d; }
         function csvCell(v) { let t = unesc(v ?? '').toString(); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g,'""') + '"'; }
         function newNotaId() { const d = new Date(), pad = x => String(x).padStart(2,'0'); const base = 'SRV-' + String(d.getFullYear()).slice(2) + pad(d.getMonth()+1) + pad(d.getDate()) + '-'; let id; do { id = base + Math.random().toString(36).slice(2,6).toUpperCase(); } while (historyData.some(h => h.id === id || h.notaId === id)); return id; }
         function formatRupiah(num) { return parseInt(num||0).toLocaleString('id-ID'); }
         function cleanPhoneInput(el) { let v = el.value.replace(/\D/g,''); if (v.startsWith('62')) v = '0'+v.substring(2); if (v.startsWith('+62')) v = '0'+v.substring(3); el.value = v; return v; }
-        function validatePhone() { let inp = document.getElementById('nohp'), v = inp.value, valid = /^08[1-9]\d{6,10}$/.test(v); inp.classList.toggle('error-input', !valid); document.getElementById('phoneValidation').classList.toggle('show', !valid && v !== ''); return valid; }
+        function validatePhone() { let inp = document.getElementById('nohp'), v = inp.value, valid = v === '' || /^08[1-9]\d{6,10}$/.test(v); inp.classList.toggle('error-input', !valid); document.getElementById('phoneValidation').classList.toggle('show', !valid && v !== ''); return valid; }
         function hitungSisa() { let t = parseFloat(document.getElementById('totalBiaya').value)||0, d = parseFloat(document.getElementById('dp').value)||0, s = t - d; document.getElementById('sisa').value = s > 0 ? s.toLocaleString('id-ID') : '0'; }
 
         // IndexedDB
@@ -179,7 +180,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 const Camera = getPlugin('Camera');
                 if (Camera) {
                     try {
-                        await Camera.requestPermissions();
+                        try { await Camera.requestPermissions({ permissions: ['camera'] }); } catch (e) { console.warn('Izin kamera:', e); }
                         const photo = await Camera.getPhoto({
                             quality: 60,
                             allowEditing: false,
@@ -274,6 +275,26 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         // ================================================
 
         async function saveContact() {
+            const nama = document.getElementById('nama').value.trim(), nohp = document.getElementById('nohp').value.trim().replace(/\D/g, '');
+            if (!nama) { showToast('Isi nama pelanggan terlebih dahulu'); return; }
+            if (!nohp) { showToast('Isi nomor HP pelanggan terlebih dahulu'); return; }
+            const C = getPlugin('Contacts');
+            if (!C) return saveContactViaShare();
+            try {
+                const perm = await C.requestPermissions();
+                if (perm.contacts !== 'granted') throw new Error('Izin kontak ditolak');
+                const target = normalizePhone(nohp).slice(-9);
+                const res = await C.getContacts({ projection: { name: true, phones: true } });
+                const dup = (res.contacts || []).find(c => (c.phones || []).some(p => normalizePhone(p.number).slice(-9) === target));
+                if (dup) { showToast('Nomor sudah ada di kontak: ' + ((dup.name && dup.name.display) || nohp)); return; }
+                await C.createContact({ contact: { name: { given: nama }, phones: [{ type: 'mobile', number: nohp }] } });
+                showToast('✅ Kontak tersimpan di HP');
+            } catch (e) {
+                showToast('Simpan langsung gagal, membuka menu bagikan...');
+                return saveContactViaShare();
+            }
+        }
+        async function saveContactViaShare() {
             const nama = document.getElementById('nama').value.trim(); let nohp = document.getElementById('nohp').value.trim().replace(/\D/g, '');
             if (!nama) { showToast('Isi nama pelanggan terlebih dahulu'); return; }
             if (!nohp) { showToast('Isi nomor HP pelanggan terlebih dahulu'); return; }
@@ -284,7 +305,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 if (Filesystem && Share) {
                     try {
                         const b64 = btoa(unescape(encodeURIComponent(vCard)));
-                        const fn = `${nama.replace(/\s/g, '_')}.vcf`;
+                        const fn = `${nama.replace(/[^\w\-]+/g, '_')}.vcf`;
                         await Filesystem.writeFile({ path: fn, data: b64, directory: 'CACHE', recursive: true });
                         const uri = await Filesystem.getUri({ path: fn, directory: 'CACHE' });
                         await Share.share({ title: 'Simpan Kontak', text: `Kontak ${nama}`, url: uri.uri, dialogTitle: 'Simpan ke kontak' });
@@ -300,6 +321,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
 
         async function buatPreview() {
             if (!validateForm()) { showToast('Harap lengkapi data wajib!'); return; }
+            ['nama','merek','model'].forEach(id => { const e = document.getElementById(id); e.value = capWords(e.value); });
             showLoading();
             try {
                 const device = `${document.getElementById('merek').value} ${document.getElementById('model').value}`.trim();
@@ -313,7 +335,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 else if (fotoDeviceData) fotoStorage = { type: 'base64', data: fotoDeviceData };
                 let pwd = document.getElementById('passwordDevice').value, mt = document.getElementById('passwordDeviceText').value.trim();
                 if (mt) pwd = mt;
-                currentNota = { id: notaId, type: currentType, notaId, originalId, nama: escapeHtml(document.getElementById('nama').value.trim()), nohp: document.getElementById('nohp').value, device: escapeHtml(device), keluhan: escapeHtml(document.getElementById('keluhan').value.trim()), totalBiaya, dp, sisa, estimasi: escapeHtml(document.getElementById('estimasi').value), catatan: escapeHtml(document.getElementById('catatan').value), tanggal: now.toLocaleDateString('id-ID'), jam: now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}), timestamp: now.toISOString(), kelengkapan: currentType === 'terima' ? Array.from(document.querySelectorAll('#kelengkapanSection input:checked')).map(cb => cb.value) : [], kondisi: getKondisi(), passwordDevice: escapeHtml(pwd), fotoDevice: fotoStorage, diagnosa: currentType === 'diagnosa' ? { hasil: escapeHtml(document.getElementById('hasilDiagnosa').value), sparepart: escapeHtml(document.getElementById('sparepart').value), status: document.getElementById('statusDiagnosa').value } : null, selesai: currentType === 'selesai' ? { detail: escapeHtml(document.getElementById('detailPerbaikan').value), status: document.getElementById('statusSelesai').value, siapAmbil: escapeHtml(document.getElementById('siapAmbil').value) } : null, ambil: currentType === 'ambil' ? { status: currentStatus, alasan: document.getElementById('alasanBatal').value } : null, timeline };
+                currentNota = { id: notaId, type: currentType, notaId, originalId, nama: escapeHtml(document.getElementById('nama').value.trim()), nohp: document.getElementById('nohp').value, device: escapeHtml(device), keluhan: escapeHtml(document.getElementById('keluhan').value.trim()), totalBiaya, dp, sisa, estimasi: escapeHtml(document.getElementById('estimasi').value), catatan: escapeHtml(document.getElementById('catatan').value), tanggal: now.toLocaleDateString('id-ID'), jam: now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}), timestamp: now.toISOString(), kelengkapan: currentType === 'terima' ? Array.from(document.querySelectorAll('#kelengkapanSection input:checked')).map(cb => cb.value) : [], kondisi: getKondisi(), passwordDevice: escapeHtml(pwd), fotoDevice: fotoStorage, diagnosa: currentType === 'diagnosa' ? { hasil: escapeHtml(document.getElementById('hasilDiagnosa').value), sparepart: escapeHtml(document.getElementById('sparepart').value), status: document.getElementById('statusDiagnosa').value } : null, selesai: currentType === 'selesai' ? { detail: escapeHtml(document.getElementById('detailPerbaikan').value), status: document.getElementById('statusSelesai').value, siapAmbil: escapeHtml(document.getElementById('siapAmbil').value) } : null, ambil: currentType === 'ambil' ? { status: currentStatus, alasan: document.getElementById('alasanBatal').value } : null, timeline, modal: parseFloat(document.getElementById('modal').value)||0, metodeBayar: document.getElementById('metodeBayar').value, langsung: currentType === 'langsung' ? { detail: escapeHtml(document.getElementById('detailLangsung').value.trim()), sparepart: escapeHtml(document.getElementById('sparepartLangsung').value.trim()), garansi: Math.max(parseInt(document.getElementById('garansiLangsung').value) || 0, 0) } : null };
                 delete window._lanjutOriginalId;
                 currentNota = sanitizeNota(currentNota);
                 renderPreview(); await saveToHistory(currentNota); localStorage.removeItem('nota_draft');
@@ -328,7 +350,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
 
         function renderPreview() {
             let badgeClass, badgeText, paperClass;
-            switch(currentType){ case 'terima': badgeClass='badge-terima'; badgeText='📥 NOTA PENERIMAAN'; paperClass='terima'; break; case 'diagnosa': badgeClass='badge-diagnosa'; badgeText='🔍 HASIL DIAGNOSA'; paperClass='diagnosa'; break; case 'selesai': badgeClass='badge-selesai'; badgeText='✅ SELESAI'; paperClass='selesai'; break; case 'ambil': if(currentNota.ambil?.status==='batal'){ badgeClass='badge-batal'; badgeText='❌ DIBATALKAN'; paperClass='batal'; } else { badgeClass='badge-ambil'; badgeText='📤 DIAMBIL'; paperClass='ambil'; } break; }
+            switch(currentType){ case 'terima': badgeClass='badge-terima'; badgeText='📥 NOTA PENERIMAAN'; paperClass='terima'; break; case 'diagnosa': badgeClass='badge-diagnosa'; badgeText='🔍 HASIL DIAGNOSA'; paperClass='diagnosa'; break; case 'selesai': badgeClass='badge-selesai'; badgeText='✅ SELESAI'; paperClass='selesai'; break; case 'langsung': badgeClass='badge-ambil'; badgeText='⚡ SERVIS LANGSUNG'; paperClass='ambil'; break; case 'ambil': if(currentNota.ambil?.status==='batal'){ badgeClass='badge-batal'; badgeText='❌ DIBATALKAN'; paperClass='batal'; } else { badgeClass='badge-ambil'; badgeText='📤 DIAMBIL'; paperClass='ambil'; } break; }
             let html = `<div class="nota-header">`;
             if(isSafeImg(logoData)) html+=`<img src="${logoData}" class="nota-logo">`;
             html+=`<h2>${escapeHtml(tokoSettings.nama||'Nota Service HP')}</h2>`;
@@ -340,7 +362,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             html+=`<div class="nota-id">${currentNota.notaId}</div></div>`;
             html+=`<div class="nota-section"><div class="nota-section-title">👤 Pelanggan</div>`;
             html+=`<div class="nota-row"><span class="nota-label">Nama</span><span class="nota-value">${currentNota.nama}</span></div>`;
-            html+=`<div class="nota-row"><span class="nota-label">No. HP</span><span class="nota-value">${currentNota.nohp}</span></div>`;
+            if(currentNota.nohp) html+=`<div class="nota-row"><span class="nota-label">No. HP</span><span class="nota-value">${currentNota.nohp}</span></div>`;
             html+=`<div class="nota-row"><span class="nota-label">Device</span><span class="nota-value">${currentNota.device}</span></div>`;
             // Password/pola perangkat sengaja tidak ditampilkan pada nota pelanggan.
             html+=`</div><div class="nota-section"><div class="nota-section-title">📋 Detail Service</div>`;
@@ -352,18 +374,19 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             if(currentType==='diagnosa' && currentNota.diagnosa){ html+=`<div style="margin-top:10px;"><strong>🔍 Hasil Diagnosa:</strong> ${currentNota.diagnosa.hasil||'-'}</div>`; if(currentNota.diagnosa.sparepart) html+=`<div><strong>Sparepart:</strong> ${currentNota.diagnosa.sparepart}</div>`; let stat={bisa:'✅ Bisa diperbaiki',tidak:'❌ Tidak bisa diperbaiki',pending:'⏳ Menunggu konfirmasi'}; html+=`<div><strong>Status:</strong> ${stat[currentNota.diagnosa.status]||currentNota.diagnosa.status}</div>`; }
             if(currentType==='selesai' && currentNota.selesai){ html+=`<div style="margin-top:10px;"><strong>✅ Detail Perbaikan:</strong> ${currentNota.selesai.detail||'-'}</div>`; let stat={normal:'✅ Berfungsi normal',partial:'⚠️ Berfungsi sebagian',tidak:'❌ Tidak bisa'}; html+=`<div><strong>Status:</strong> ${stat[currentNota.selesai.status]||currentNota.selesai.status}</div>`; if(currentNota.selesai.siapAmbil) html+=`<div><strong>Siap diambil:</strong> ${currentNota.selesai.siapAmbil}</div>`; }
             if(currentType==='ambil' && currentNota.ambil){ if(currentNota.ambil.status==='diambil') html+=`<div style="margin-top:10px; background:#e8f5e9; padding:8px; border-radius:8px;"><strong>✅ Status:</strong> Sudah diambil oleh pelanggan</div>`; else html+=`<div style="margin-top:10px; background:#ffebee; padding:8px; border-radius:8px;"><strong>❌ Status:</strong> Dibatalkan<br>Alasan: ${escapeHtml(currentNota.ambil.alasan||'-')}</div>`; }
+            if(currentType==='langsung' && currentNota.langsung){ const L=currentNota.langsung; html+=`<div style="margin-top:10px;"><strong>🔧 Detail Perbaikan:</strong> ${L.detail||'-'}</div>`; if(L.sparepart) html+=`<div><strong>Sparepart:</strong> ${L.sparepart}</div>`; if(L.garansi>0){ const gd=new Date(new Date(currentNota.timestamp).getTime()+L.garansi*86400000).toLocaleDateString('id-ID'); html+=`<div><strong>Garansi:</strong> ${L.garansi} hari (s/d ${gd})</div>`; } if(currentNota.metodeBayar) html+=`<div><strong>Pembayaran:</strong> ${escapeHtml(currentNota.metodeBayar)}</div>`; html+=`<div style="margin-top:10px; background:#e8f5e9; padding:8px; border-radius:8px;"><strong>✅ Status:</strong> Selesai &amp; langsung diambil pelanggan</div>`; }
             html+=`</div>`;
             if(currentNota.totalBiaya>0){ html+=`<div class="nota-total"><div class="nota-row"><span class="nota-label">Total Biaya</span><span class="nota-value">Rp ${formatRupiah(currentNota.totalBiaya)}</span></div>`; if(currentNota.dp>0) html+=`<div class="nota-row"><span class="nota-label">DP / Panjar</span><span class="nota-value">Rp ${formatRupiah(currentNota.dp)}</span></div><div class="nota-row"><span class="nota-label">Sisa Pembayaran</span><span class="nota-value">Rp ${formatRupiah(currentNota.sisa)}</span></div>`; html+=`</div>`; }
-            if(currentNota.timeline && currentNota.timeline.length>1){ html+=`<div class="timeline"><div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:8px;">📅 Timeline Service</div>`; currentNota.timeline.forEach(item=>{ let name={terima:'📥 Diterima',diagnosa:'🔍 Diagnosa',selesai:'✅ Selesai',ambil:'📤 Diambil/Dibatalkan'}[item.status]||item.status; html+=`<div style="font-size:11px; color:#666; margin-bottom:6px; display:flex; align-items:baseline; gap:8px;"><span style="width:8px; height:8px; border-radius:50%; background:var(--primary);"></span><span style="font-family:monospace; font-size:10px; color:#999;">${new Date(item.timestamp).toLocaleString('id-ID')}</span> <strong>${name}</strong></div>`; }); html+=`</div>`; }
-            let footer = (footers[currentType]?.enabled && footers[currentType]?.text) ? footers[currentType].text : '';
+            if(currentNota.timeline && currentNota.timeline.length>1){ html+=`<div class="timeline"><div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:8px;">📅 Timeline Service</div>`; currentNota.timeline.forEach(item=>{ let name={terima:'📥 Diterima',diagnosa:'🔍 Diagnosa',selesai:'✅ Selesai',ambil:'📤 Diambil/Dibatalkan',langsung:'⚡ Servis langsung'}[item.status]||item.status; html+=`<div style="font-size:11px; color:#666; margin-bottom:6px; display:flex; align-items:baseline; gap:8px;"><span style="width:8px; height:8px; border-radius:50%; background:var(--primary);"></span><span style="font-family:monospace; font-size:10px; color:#999;">${new Date(item.timestamp).toLocaleString('id-ID')}</span> <strong>${name}</strong></div>`; }); html+=`</div>`; }
+            let footer = (footers[footerKey()]?.enabled && footers[footerKey()]?.text) ? footers[footerKey()].text : '';
             if(footer) html+=`<div class="nota-footer">${escapeHtml(footer).replace(/\n/g,'<br>')}</div>`;
-            if((currentType==='terima' || currentType==='ambil') && skText.trim()) html+=`<div class="syarat-section"><strong>📜 SYARAT & KETENTUAN</strong>${escapeHtml(skText).replace(/\n/g,'<br>')}</div>`;
+            if((currentType==='terima' || currentType==='ambil' || currentType==='langsung') && skText.trim()) html+=`<div class="syarat-section"><strong>📜 SYARAT & KETENTUAN</strong>${escapeHtml(skText).replace(/\n/g,'<br>')}</div>`;
             html+=`<div style="text-align:center; margin-top:20px; font-size:11px; color:#999;">Terima kasih atas kepercayaan Anda<br>Simpan nota ini sebagai bukti</div>`;
             document.getElementById('notaContent').innerHTML = html;
             document.getElementById('notaContent').className = `nota-paper ${paperClass}`;
         }
 
-        function isNotaLocked() { return currentNota && currentNota.type === 'ambil'; }
+        function isNotaLocked() { return currentNota && (currentNota.type === 'ambil' || currentNota.type === 'langsung'); }
         function updateWorkflowButtons() {
             let c = document.getElementById('workflowButtons');
             if(!currentNota){ c.innerHTML=''; return; }
@@ -385,6 +408,8 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             document.getElementById('keluhan').value = currentNota.keluhan;
             document.getElementById('totalBiaya').value = currentNota.totalBiaya||0;
             document.getElementById('dp').value = currentNota.dp||0;
+            document.getElementById('modal').value = currentNota.modal||0;
+            if (currentNota.metodeBayar) document.getElementById('metodeBayar').value = currentNota.metodeBayar;
             hitungSisa();
             document.getElementById('estimasi').value = currentNota.estimasi||'';
             document.getElementById('catatan').value = currentNota.catatan||'';
@@ -417,11 +442,12 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         async function kirimWA(mode){
             if(!currentNota) return;
             let no = normalizePhone(currentNota.nohp);
+            if(!no){ showToast('Nomor HP pelanggan kosong, tidak bisa kirim WhatsApp'); return; }
             if(mode==='teks'){
                 let template = localStorage.getItem('wa_template') || `*{toko}*\n━━━━━━━━━━━━━━━\n{type_badge}\n━━━━━━━━━━━━━━━\n\n🆔 No: *{nota_id}*\n📅 {tanggal} | ⏰ {jam}\n\n👤 *Pelanggan:* {nama}\n📱 *Device:* {device}\n\n📋 *Keluhan:*\n{keluhan}\n\n{kelengkapan_line}\n💰 *Estimasi Biaya:* Rp {biaya}\n⏳ *Estimasi Waktu:* {estimasi}\n\n📝 *Catatan:* {catatan}\n\n━━━━━━━━━━━━\n{footer}`;
-                let badge = {terima:'📥 *NOTA PENERIMAAN*',diagnosa:'🔍 *HASIL DIAGNOSA*',selesai:'✅ *NOTA SELESAI*',ambil:currentNota.ambil?.status==='batal'?'❌ *DIBATALKAN*':'📤 *NOTA AMBIL*'}[currentType]||'📋 *NOTA SERVICE*';
+                let badge = {terima:'📥 *NOTA PENERIMAAN*',diagnosa:'🔍 *HASIL DIAGNOSA*',selesai:'✅ *NOTA SELESAI*',langsung:'⚡ *NOTA SERVIS LANGSUNG*',ambil:currentNota.ambil?.status==='batal'?'❌ *DIBATALKAN*':'📤 *NOTA AMBIL*'}[currentType]||'📋 *NOTA SERVICE*';
                 let kelengkapanLine = currentNota.kelengkapan?.length ? `📦 *Kelengkapan:* ${currentNota.kelengkapan.join(', ')}` : '📦 *Kelengkapan:* -';
-                let msg = template.replace(/{toko}/g, tokoSettings.nama||'Service HP').replace(/{type_badge}/g, badge).replace(/{nota_id}/g, currentNota.notaId).replace(/{tanggal}/g, currentNota.tanggal).replace(/{jam}/g, currentNota.jam).replace(/{nama}/g, () => unesc(currentNota.nama)).replace(/{device}/g, () => unesc(currentNota.device)).replace(/{keluhan}/g, () => unesc(currentNota.keluhan)).replace(/{kelengkapan_line}/g, kelengkapanLine).replace(/{biaya}/g, formatRupiah(currentNota.totalBiaya)).replace(/{estimasi}/g, currentNota.estimasi||'-').replace(/{catatan}/g, () => unesc(currentNota.catatan)||'-').replace(/{footer}/g, footers[currentType]?.enabled?footers[currentType].text:'');
+                let msg = template.replace(/{toko}/g, tokoSettings.nama||'Service HP').replace(/{type_badge}/g, badge).replace(/{nota_id}/g, currentNota.notaId).replace(/{tanggal}/g, currentNota.tanggal).replace(/{jam}/g, currentNota.jam).replace(/{nama}/g, () => unesc(currentNota.nama)).replace(/{device}/g, () => unesc(currentNota.device)).replace(/{keluhan}/g, () => unesc(currentNota.keluhan)).replace(/{kelengkapan_line}/g, kelengkapanLine).replace(/{biaya}/g, formatRupiah(currentNota.totalBiaya)).replace(/{estimasi}/g, currentNota.estimasi||'-').replace(/{catatan}/g, () => unesc(currentNota.catatan)||'-').replace(/{footer}/g, footers[footerKey()]?.enabled?footers[footerKey()].text:'');
                 window.open(`https://wa.me/${no}?text=${encodeURIComponent(msg)}`,'_blank');
             } else if(mode==='gambar'){
                 showLoading();
@@ -470,6 +496,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 if (data.telepon) encoder.align('center').text(`📞 ${data.telepon}`).newline();
                 encoder.text('===============================').newline().align('left');
                 encoder.text(`No   : ${data.id}`).newline().text(`Tgl  : ${data.tanggal}`).newline().text(`Nama : ${data.nama}`).newline().text(`HP   : ${data.nohp}`).newline().text(`Device: ${data.device}`).newline().text('-------------------------------').newline().text('Keluhan:').newline().text(data.keluhan).newline().text('-------------------------------').newline();
+                if (data.detail) { encoder.text(`${data.detailLabel || 'Detail'}:`).newline().text(unesc(data.detail)).newline(); if (data.sparepart) encoder.text(`Sparepart: ${unesc(data.sparepart)}`).newline(); if (data.garansi) encoder.text(`Garansi: ${data.garansi}`).newline(); if (data.metode) encoder.text(`Bayar: ${data.metode}`).newline(); encoder.text('-------------------------------').newline(); }
                 if(data.biaya>0) encoder.align('right').text(`Total: Rp ${data.biaya}`).newline().align('left');
                 encoder.align('center').text('\nTerima Kasih\n');
                 if(data.footer) encoder.text(data.footer).newline();
@@ -487,6 +514,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                 L.push(`[C]${'='.repeat(n)}`);
                 L.push(`[L]No      : ${clean(d.id)}`, `[L]Tanggal : ${clean(d.tanggal)}`, `[L]Nama    : ${clean(d.nama)}`, `[L]HP      : ${clean(d.nohp)}`, `[L]Device  : ${clean(d.device)}`);
                 L.push(`[C]${sep}`, '[L]<b>Keluhan:</b>', `[L]${clean(d.keluhan)}`, `[C]${sep}`);
+                if (d.detail) { L.push(`[L]<b>${d.detailLabel || 'Detail'}:</b>`, `[L]${clean(d.detail)}`); if (d.sparepart) L.push(`[L]Sparepart: ${clean(d.sparepart)}`); if (d.garansi) L.push(`[L]Garansi  : ${clean(d.garansi)}`); if (d.metode) L.push(`[L]Bayar    : ${clean(d.metode)}`); L.push(`[C]${sep}`); }
                 if (d.biaya > 0) { L.push(`[L]Total   [R]${rp(d.biaya)}`); if (d.dp > 0) { L.push(`[L]DP      [R]${rp(d.dp)}`, `[L]<b>Sisa</b>    [R]<b>${rp(d.sisa)}</b>`); } L.push(`[C]${sep}`); }
                 if (d.footer) L.push(`[C]${clean(d.footer)}`);
                 L.push('[C]Terima Kasih', '[C]Simpan nota ini sebagai bukti');
@@ -549,7 +577,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         async function printBluetooth() { 
             if (!currentNota) { showToast('Buat nota dulu'); return; }
             showLoading();
-            try { await printer.print({ toko: tokoSettings.nama||'Service HP', slogan: tokoSettings.slogan || '', telepon: tokoSettings.telepon || '', id: currentNota.notaId, tanggal: currentNota.tanggal+' '+currentNota.jam, nama: unesc(currentNota.nama), nohp: currentNota.nohp, device: unesc(currentNota.device), keluhan: unesc(currentNota.keluhan), biaya: currentNota.totalBiaya, dp: currentNota.dp, sisa: currentNota.sisa, footer: footers[currentType]?.enabled ? footers[currentType].text : '' }); }
+            try { await printer.print({ ...thermalExtra(), toko: tokoSettings.nama||'Service HP', slogan: tokoSettings.slogan || '', telepon: tokoSettings.telepon || '', id: currentNota.notaId, tanggal: currentNota.tanggal+' '+currentNota.jam, nama: unesc(currentNota.nama), nohp: currentNota.nohp || '-', device: unesc(currentNota.device), keluhan: unesc(currentNota.keluhan), biaya: currentNota.totalBiaya, dp: currentNota.dp, sisa: currentNota.sisa, footer: footers[footerKey()]?.enabled ? footers[footerKey()].text : '' }); }
             catch (e) { showToast('❌ Gagal cetak thermal: ' + e.message + '. Beralih ke PDF.'); generatePDF(); }
             finally { hideLoading(); }
         }
@@ -571,7 +599,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
 
         function previewThermal() {
             if (!currentNota) { showToast('Buat nota terlebih dahulu'); return; }
-            const data = { toko: tokoSettings.nama || 'Service HP', slogan: tokoSettings.slogan || '', telepon: tokoSettings.telepon || '', id: currentNota.notaId, tanggal: currentNota.tanggal + ' ' + currentNota.jam, nama: unesc(currentNota.nama), nohp: currentNota.nohp, device: unesc(currentNota.device), keluhan: unesc(currentNota.keluhan), biaya: currentNota.totalBiaya, dp: currentNota.dp, sisa: currentNota.sisa, footer: footers[currentType]?.enabled ? footers[currentType].text : '' };
+            const data = { ...thermalExtra(), toko: tokoSettings.nama || 'Service HP', slogan: tokoSettings.slogan || '', telepon: tokoSettings.telepon || '', id: currentNota.notaId, tanggal: currentNota.tanggal + ' ' + currentNota.jam, nama: unesc(currentNota.nama), nohp: currentNota.nohp || '-', device: unesc(currentNota.device), keluhan: unesc(currentNota.keluhan), biaya: currentNota.totalBiaya, dp: currentNota.dp, sisa: currentNota.sisa, footer: footers[footerKey()]?.enabled ? footers[footerKey()].text : '' };
             let lines = []; lines.push('==============================='); lines.push(data.toko.toUpperCase()); if (data.slogan) lines.push(data.slogan); if (data.telepon) lines.push(`📞 ${data.telepon}`); lines.push('==============================='); lines.push(`No   : ${data.id}`); lines.push(`Tgl  : ${data.tanggal}`); lines.push(`Nama : ${data.nama}`); lines.push(`HP   : ${data.nohp}`); lines.push(`Device: ${data.device}`); lines.push('-------------------------------'); lines.push('Keluhan:'); lines.push(data.keluhan); lines.push('-------------------------------'); if (data.biaya > 0) lines.push(`Total: Rp ${formatRupiah(data.biaya)}`); lines.push('-------------------------------'); lines.push('Terima Kasih'); if (data.footer) lines.push(data.footer); lines.push('Simpan Nota Ini'); lines.push('===============================');
             document.getElementById('thermalPreviewText').textContent = lines.join('\n');
             document.getElementById('thermalPreviewModal').classList.add('active');
@@ -590,15 +618,24 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             function fallbackDownload(json) { const a = document.createElement('a'), url = URL.createObjectURL(new Blob([json], {type: 'application/json'})); a.href = url; a.download = `Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url); showToast('File backup diunduh, silakan upload ke Drive'); }
         }
 
+        function thermalExtra() {
+            const n = currentNota || {}; const x = { detailLabel: '', detail: '', sparepart: '', garansi: '', metode: '' };
+            if (n.type === 'langsung' && n.langsung) { x.detailLabel = 'Perbaikan'; x.detail = n.langsung.detail; x.sparepart = n.langsung.sparepart; if (n.langsung.garansi > 0) { const end = new Date(new Date(n.timestamp).getTime() + n.langsung.garansi * 86400000).toLocaleDateString('id-ID'); x.garansi = `${n.langsung.garansi} hari (s/d ${end})`; } x.metode = n.metodeBayar || ''; }
+            else if (n.type === 'selesai' && n.selesai) { x.detailLabel = 'Perbaikan'; x.detail = n.selesai.detail; }
+            else if (n.type === 'diagnosa' && n.diagnosa) { x.detailLabel = 'Diagnosa'; x.detail = n.diagnosa.hasil; x.sparepart = n.diagnosa.sparepart; }
+            return x;
+        }
+        function footerKey() { return currentType === 'langsung' ? 'ambil' : currentType; }
         function selectType(type) {
             currentType = type;
-            ['terima','diagnosa','selesai','ambil'].forEach(t=>{ document.getElementById(`btn${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t===type); });
+            ['terima','diagnosa','selesai','ambil','langsung'].forEach(t=>{ document.getElementById(`btn${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t===type); });
             document.querySelectorAll('.step').forEach(s=>s.classList.toggle('active', s.dataset.step===type));
-            document.getElementById('formTitle').innerHTML = {terima:'📥 Nota Penerimaan',diagnosa:'🔍 Hasil Diagnosa',selesai:'✅ Nota Selesai',ambil:'📤 Nota Ambil/Batal'}[type];
+            document.getElementById('formTitle').innerHTML = {terima:'📥 Nota Penerimaan',diagnosa:'🔍 Hasil Diagnosa',selesai:'✅ Nota Selesai',ambil:'📤 Nota Ambil/Batal',langsung:'⚡ Nota Servis Langsung'}[type];
             document.getElementById('kelengkapanSection').style.display = type==='terima'?'block':'none';
             document.getElementById('diagnosaSection').style.display = type==='diagnosa'?'block':'none';
             document.getElementById('selesaiSection').style.display = type==='selesai'?'block':'none';
             document.getElementById('ambilSection').style.display = type==='ambil'?'block':'none';
+            document.getElementById('langsungSection').style.display = type==='langsung'?'block':'none';
         }
         function selectAmbilStatus(status) { currentStatus = status; document.getElementById('statusDiambil').classList.toggle('active', status==='diambil'); document.getElementById('statusBatal').classList.toggle('active', status==='batal'); document.getElementById('alasanBatalGroup').style.display = status==='batal'?'block':'none'; }
         function resetForm() { document.getElementById('notaForm').reset(); document.querySelectorAll('.kondisi-checkbox').forEach(c => c.classList.remove('active')); document.getElementById('kondisiLainnya').value = ''; fotoDeviceData = null; fotoDevicePath = null; let p = document.getElementById('fotoPreview'); p.innerHTML = ''; p.classList.remove('show'); resetPattern(); document.getElementById('passwordDeviceText').value = ''; selectType('terima'); selectAmbilStatus('diambil'); hitungSisa(); localStorage.removeItem('nota_draft'); }
@@ -661,7 +698,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             let filtered = search ? historyData.filter(h => h.nama.toLowerCase().includes(search) || h.nohp.includes(search) || h.device.toLowerCase().includes(search)) : historyData;
             if(filter) filtered = filtered.filter(h => h.type === filter);
             let now = new Date(), bulanIni = historyData.filter(h => { let d = new Date(h.timestamp); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); }).length;
-            let selesai = historyData.filter(h => h.type==='ambil' && h.ambil?.status==='diambil').length, pending = historyData.filter(h => h.type==='terima'||h.type==='diagnosa').length;
+            let selesai = historyData.filter(h => (h.type==='ambil' && h.ambil?.status==='diambil') || h.type==='langsung').length, pending = historyData.filter(h => h.type==='terima'||h.type==='diagnosa').length;
             document.getElementById('statTotal').innerText = historyData.length; document.getElementById('statBulanIni').innerText = bulanIni; document.getElementById('statSelesai').innerText = selesai; document.getElementById('statPending').innerText = pending;
             let list = document.getElementById('historyList');
             if(!filtered.length){ list.innerHTML='<div style="text-align:center; padding:20px;">Tidak ada data</div>'; return; }
@@ -722,7 +759,8 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             if(tokoSettings.primaryColor){ document.documentElement.style.setProperty('--primary', tokoSettings.primaryColor); document.getElementById('themeColorMeta').setAttribute('content', tokoSettings.primaryColor); }
             let draft = localStorage.getItem('nota_draft');
             if(draft){ let d = JSON.parse(draft); if((new Date() - new Date(d.timestamp)) < 24*3600000){ document.getElementById('nama').value = d.nama||''; document.getElementById('nohp').value = d.nohp||''; document.getElementById('merek').value = d.merek||''; document.getElementById('model').value = d.model||''; document.getElementById('keluhan').value = d.keluhan||''; } }
-            document.querySelectorAll('#nama, #nohp, #merek, #model, #keluhan').forEach(inp => inp.addEventListener('input',()=>{ localStorage.setItem('nota_draft', JSON.stringify({ nama:document.getElementById('nama').value, nohp:document.getElementById('nohp').value, merek:document.getElementById('merek').value, model:document.getElementById('model').value, keluhan:document.getElementById('keluhan').value, timestamp:new Date() })); }));
+            document.querySelectorAll('#nama, #merek, #model').forEach(el => el.addEventListener('blur', () => { el.value = capWords(el.value); }));
+    document.querySelectorAll('#nama, #nohp, #merek, #model, #keluhan').forEach(inp => inp.addEventListener('input',()=>{ localStorage.setItem('nota_draft', JSON.stringify({ nama:document.getElementById('nama').value, nohp:document.getElementById('nohp').value, merek:document.getElementById('merek').value, model:document.getElementById('model').value, keluhan:document.getElementById('keluhan').value, timestamp:new Date() })); }));
             document.querySelectorAll('.kondisi-checkbox').forEach(el => el.addEventListener('click',()=>el.classList.toggle('active')));
             if(!navigator.onLine) document.getElementById('connectionStatus').classList.add('offline');
             await loadHistory(); initPatternCanvas();
@@ -739,7 +777,60 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             showToast(`Notifikasi WA dikirim ke ${nota.nama}`);
         }
 
-        return { init, selectType, selectAmbilStatus, buatPreview, renderPreview, updateWorkflowButtons, lanjutKe, kirimWA, printBluetooth, generatePDF, exportCSV, exportJSON, restoreData, clearAllData, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, backToForm, buatNotaBaru, resetForm, importContact, handleFotoDevice, cleanPhoneInput, validatePhone, hitungSisa, loadHistoryItem, renderHistory, backupData: exportJSON, backupToDrive, previewThermal, closeThermalPreview, saveContact, savePrinterId, clearPrinterId, resetPattern, clearPattern };
+
+        // ============ LAPORAN KEUANGAN (1 baris per servis) ============
+        function groupServis() {
+            const g = {};
+            historyData.forEach(h => { const k = h.originalId || h.id; (g[k] = g[k] || []).push(h); });
+            return Object.values(g).map(arr => {
+                arr.sort((x, y) => new Date(x.timestamp) - new Date(y.timestamp));
+                const last = arr[arr.length - 1];
+                let status = 'proses';
+                if (last.type === 'langsung') status = 'diambil'; else if (last.type === 'ambil') status = (last.ambil && last.ambil.status === 'batal') ? 'batal' : 'diambil';
+                return { id: last.originalId || last.id, nama: unesc(last.nama), device: unesc(last.device), total: Number(last.totalBiaya) || 0, dp: Number(last.dp) || 0, modal: Number(last.modal) || 0, metode: last.metodeBayar || '', status, ts: last.timestamp };
+            }).sort((x, y) => new Date(y.ts) - new Date(x.ts));
+        }
+        function ymKey(ts) { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+        function showLaporan() {
+            const box = document.getElementById('laporanBox');
+            if (box.style.display === 'block') { box.style.display = 'none'; return; }
+            box.style.display = 'block'; renderLaporan();
+        }
+        function renderLaporan() {
+            const box = document.getElementById('laporanBox');
+            const prev = document.getElementById('laporanBulan');
+            const bulan = prev ? prev.value : ymKey(new Date());
+            const data = groupServis();
+            const selesai = data.filter(s => s.status === 'diambil' && ymKey(s.ts) === bulan);
+            const batal = data.filter(s => s.status === 'batal' && ymKey(s.ts) === bulan);
+            const proses = data.filter(s => s.status === 'proses');
+            const sum = (arr, f) => arr.reduce((t, s) => t + f(s), 0);
+            const omzet = sum(selesai, s => s.total), modal = sum(selesai, s => s.modal), laba = omzet - modal;
+            const dpBatal = sum(batal, s => s.dp);
+            const dpProses = sum(proses, s => s.dp), sisaProses = sum(proses, s => Math.max(s.total - s.dp, 0));
+            const card = (l, v) => `<div style="flex:1 1 45%; padding:10px; border-radius:10px; background:rgba(128,128,128,.12);"><div style="font-size:11px; opacity:.7;">${l}</div><div style="font-weight:bold;">${v}</div></div>`;
+            const rows = selesai.map(s => `<tr><td>${escapeHtml(s.nama)}<br><small>${escapeHtml(s.device)}</small></td><td style="text-align:right;">${formatRupiah(s.total)}</td><td style="text-align:right;">${formatRupiah(s.modal)}</td><td style="text-align:right;">${formatRupiah(s.total - s.modal)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">Belum ada servis diambil bulan ini</td></tr>';
+            box.innerHTML = `<div style="padding:12px; border-radius:12px; border:1px solid rgba(128,128,128,.3);">
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><strong>📈 Laporan</strong><input type="month" id="laporanBulan" value="${bulan}" onchange="app.renderLaporan()" style="flex:1;"></div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                    ${card('Servis diambil', selesai.length)}${card('Omzet', 'Rp ' + formatRupiah(omzet))}
+                    ${card('Modal sparepart', 'Rp ' + formatRupiah(modal))}${card('Laba kotor', 'Rp ' + formatRupiah(laba))}
+                    ${card('DP servis batal (' + batal.length + ')', 'Rp ' + formatRupiah(dpBatal))}${card('Servis berjalan (' + proses.length + ')', 'DP Rp ' + formatRupiah(dpProses) + '<br>Sisa Rp ' + formatRupiah(sisaProses))}
+                </div>
+                <div style="overflow-x:auto; margin-top:10px;"><table style="width:100%; font-size:12px; border-collapse:collapse;"><thead><tr><th style="text-align:left;">Servis</th><th>Total</th><th>Modal</th><th>Laba</th></tr></thead><tbody>${rows}</tbody></table></div>
+                <small style="display:block; margin-top:8px; opacity:.7;">Servis dihitung 1x per nota (tahap terakhir). Omzet = servis berstatus diambil pada bulan tsb, dianggap lunas. DP servis batal ditampilkan terpisah; tentukan sendiri hangus atau refund.</small>
+                <button class="btn-secondary" style="margin-top:8px;" onclick="app.exportLaporanCSV()">📊 Export CSV per servis</button></div>`;
+        }
+        function exportLaporanCSV() {
+            const data = groupServis(); if (!data.length) { showToast('Belum ada data'); return; }
+            let csv = '\ufeffIDServis,Tanggal,Nama,Device,Status,Total,DP,Sisa,Modal,Laba,Metode\n';
+            data.forEach(s => { csv += [csvCell(s.id), csvCell(new Date(s.ts).toISOString().slice(0, 10)), csvCell(s.nama), csvCell(s.device), csvCell(s.status), s.total, s.dp, Math.max(s.total - s.dp, 0), s.modal, s.status === 'diambil' ? s.total - s.modal : 0, csvCell(s.metode)].join(',') + '\n'; });
+            const name = `Laporan_Servis_${new Date().toISOString().slice(0, 10)}.csv`;
+            if (isCapacitor()) { shareFile(name, textToB64(csv), 'text/csv', 'Laporan Servis').catch(e => showToast('Gagal: ' + e.message)); return; }
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); a.download = name; a.click();
+        }
+
+        return { init, selectType, selectAmbilStatus, buatPreview, renderPreview, updateWorkflowButtons, lanjutKe, kirimWA, printBluetooth, generatePDF, exportCSV, exportJSON, restoreData, clearAllData, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, backToForm, buatNotaBaru, resetForm, importContact, handleFotoDevice, cleanPhoneInput, validatePhone, hitungSisa, loadHistoryItem, renderHistory, backupData: exportJSON, backupToDrive, previewThermal, closeThermalPreview, saveContact, savePrinterId, clearPrinterId, resetPattern, clearPattern, showLaporan, renderLaporan, exportLaporanCSV };
     })();
 
     (async () => {
