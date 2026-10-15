@@ -1,0 +1,1 @@
+# NotaServiceHP-Capacitor
