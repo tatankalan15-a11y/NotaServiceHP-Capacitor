@@ -31,7 +31,7 @@ console.log('AndroidManifest.xml berhasil dipatch');
 // ---- Plugin native: kirim gambar nota langsung ke chat WhatsApp nomor pelanggan ----
 const javaDir = path.join(__dirname, '..', 'android/app/src/main/java/com/notaservice/hp');
 fs.mkdirSync(javaDir, { recursive: true });
-fs.copyFileSync(path.join(__dirname, 'native', 'WhatsAppSharePlugin.java'), path.join(javaDir, 'WhatsAppSharePlugin.java'));
+for (const f of ['WhatsAppSharePlugin.java', 'EscPosPrinterPlugin.java']) fs.copyFileSync(path.join(__dirname, 'native', f), path.join(javaDir, f));
 fs.writeFileSync(path.join(javaDir, 'MainActivity.java'), `package com.notaservice.hp;
 
 import android.os.Bundle;
@@ -41,6 +41,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(WhatsAppSharePlugin.class);
+        registerPlugin(EscPosPrinterPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
@@ -50,7 +51,7 @@ if (!m.includes('com.whatsapp.w4b')) {
   m = m.replace('<application', '<queries>\n        <package android:name="com.whatsapp" />\n        <package android:name="com.whatsapp.w4b" />\n    </queries>\n    <application');
   fs.writeFileSync(f, m);
 }
-console.log('Plugin WhatsAppShare berhasil ditambahkan');
+console.log('Plugin WhatsAppShare dan EscPosPrinter berhasil ditambahkan');
 
 // ---- versionCode otomatis naik tiap build (syarat Android agar APK bisa meng-update versi lama) ----
 const gradleFile = path.join(__dirname, '..', 'android/app/build.gradle');
