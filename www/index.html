@@ -252,12 +252,15 @@
             </div>
             <div class="printer-settings">
                 <details>
-                    <summary>⚙️ Pengaturan Printer Bluetooth</summary>
+                    <summary>⚙️ Pengaturan Printer Thermal</summary>
                     <div style="margin-top:8px;">
-                        <label style="font-size:12px;">ID Printer (opsional):</label>
-                        <input type="text" id="printerDeviceId" placeholder="Isi jika scan gagal" style="padding:8px; font-size:12px;">
+                        <button class="btn-secondary" onclick="app.pickPrinter()">🔎 Pilih Printer Bluetooth (ter-pairing)</button>
+                        <div id="printerList" style="font-size:12px; margin:5px 0;"></div>
+                        <label style="font-size:12px;">ID Printer: MAC Bluetooth atau IP printer LAN/WiFi</label>
+                        <input type="text" id="printerDeviceId" placeholder="AA:BB:CC:DD:EE:FF  atau  192.168.1.50:9100" style="padding:8px; font-size:12px;">
                         <button class="btn-secondary" onclick="app.savePrinterId()" style="margin-top:5px;">💾 Simpan ID</button>
                         <button class="btn-secondary" onclick="app.clearPrinterId()" style="margin-top:5px;">🗑️ Hapus ID</button>
+                        <button class="btn-secondary" onclick="app.testPrint()" style="margin-top:5px;">🖨️ Tes Cetak</button>
                     </div>
                 </details>
             </div>
@@ -318,7 +321,7 @@
 
 <div id="thermalPreviewModal" class="thermal-preview-modal">
     <div class="thermal-preview-content">
-        <div class="close-modal" style="display:flex; gap:8px; justify-content:flex-end;"><button onclick="app.printFromPreview()">🖨️ Cetak via Bluetooth</button><button onclick="app.closeThermalPreview()">Tutup</button></div>
+        <div class="close-modal" style="display:flex; gap:8px; justify-content:flex-end;"><button onclick="app.printFromPreview()">🖨️ Cetak Thermal</button><button onclick="app.closeThermalPreview()">Tutup</button></div>
         <pre id="thermalPreviewText"></pre>
     </div>
 </div>
