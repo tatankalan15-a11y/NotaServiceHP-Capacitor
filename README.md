@@ -55,3 +55,7 @@ Nama, Merek, Model otomatis berhuruf kapital di awal kata (kata yang sudah memua
 - Status baru **Disetujui Pelanggan** (tercatat di timeline).
 - Nota diagnosa memuat catatan "estimasi dapat berubah".
 - Saat membuat nota Selesai/Ambil dengan biaya berbeda dari estimasi diagnosa, muncul konfirmasi, dan estimasi awal ditampilkan di nota.
+
+## Format nomor & WhatsApp Business
+- Nomor boleh diketik/ditempel sebagai `+62 895-3380-1234`, `62895...`, `0895...`, atau `895...`; otomatis menjadi `0895...` (9-14 digit).
+- Pengaturan > **Aplikasi WhatsApp untuk kirim gambar**: Otomatis, WhatsApp Business, atau WhatsApp biasa. Pesan teks (wa.me) dibuka oleh aplikasi WhatsApp bawaan HP.
