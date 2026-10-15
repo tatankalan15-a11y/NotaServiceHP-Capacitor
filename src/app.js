@@ -143,8 +143,8 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
         function csvCell(v) { let t = unesc(v ?? '').toString(); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g,'""') + '"'; }
         function newNotaId() { const d = new Date(), pad = x => String(x).padStart(2,'0'); const base = 'SRV-' + String(d.getFullYear()).slice(2) + pad(d.getMonth()+1) + pad(d.getDate()) + '-'; let id; do { id = base + Math.random().toString(36).slice(2,6).toUpperCase(); } while (historyData.some(h => h.id === id || h.notaId === id)); return id; }
         function formatRupiah(num) { return parseInt(num||0).toLocaleString('id-ID'); }
-        function cleanPhoneInput(el) { let v = el.value.replace(/\D/g,''); if (v.startsWith('62')) v = '0'+v.substring(2); if (v.startsWith('+62')) v = '0'+v.substring(3); el.value = v; return v; }
-        function validatePhone() { let inp = document.getElementById('nohp'), v = inp.value, valid = v === '' || /^08[1-9]\d{6,10}$/.test(v); inp.classList.toggle('error-input', !valid); document.getElementById('phoneValidation').classList.toggle('show', !valid && v !== ''); return valid; }
+        function cleanPhoneInput(el) { let v = el.value.replace(/\D/g,''); if (v.startsWith('62')) v = '0'+v.substring(2); if (v.startsWith('+62')) v = '0'+v.substring(3); else if (v.startsWith('8')) v = '0'+v; el.value = v; return v; }
+        function validatePhone() { let inp = document.getElementById('nohp'), v = inp.value, valid = v === '' || /^08[1-9]\d{6,11}$/.test(v); inp.classList.toggle('error-input', !valid); document.getElementById('phoneValidation').classList.toggle('show', !valid && v !== ''); return valid; }
         function hitungSisa() { let t = parseFloat(document.getElementById('totalBiaya').value)||0, d = parseFloat(document.getElementById('dp').value)||0, s = t - d; document.getElementById('sisa').value = s > 0 ? s.toLocaleString('id-ID') : '0'; }
 
         // IndexedDB
@@ -254,7 +254,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                         
                         // Bersihkan dan set value
                         phone = phone.replace(/\D/g, '');
-                        if (phone.startsWith('62')) phone = '0' + phone.substring(2);
+                        if (phone.startsWith('62')) phone = '0' + phone.substring(2); else if (phone.startsWith('8')) phone = '0' + phone;
                         
                         document.getElementById('nama').value = nama.trim();
                         document.getElementById('nohp').value = phone;
@@ -469,7 +469,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
                         if (no) {
                             try {
                                 const w = await getPlugin('Filesystem').writeFile({ path: fname, data: b64, directory: 'CACHE' });
-                                await getPlugin('WhatsAppShare').sendImage({ uri: w.uri, phone: no });
+                                await getPlugin('WhatsAppShare').sendImage({ uri: w.uri, phone: no, pkg: localStorage.getItem('wa_app') || 'auto' });
                                 sentDirect = true;
                                 showToast('Chat WhatsApp pelanggan terbuka, tekan kirim');
                             } catch (waErr) {
@@ -669,7 +669,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             document.getElementById('templateText').value = localStorage.getItem('wa_template')||'';
             document.getElementById('printerSize').value = localStorage.getItem('printer_size')||'58';
             autoWASelesai = localStorage.getItem('auto_wa_selesai') === 'true'; autoWAAmbil = localStorage.getItem('auto_wa_ambil') === 'true';
-            document.getElementById('autoWASelesai').checked = autoWASelesai; document.getElementById('autoWAAmbil').checked = autoWAAmbil;
+            document.getElementById('autoWASelesai').checked = autoWASelesai; document.getElementById('autoWAAmbil').checked = autoWAAmbil; document.getElementById('waApp').value = localStorage.getItem('wa_app') || 'auto';
             waNotifTemplate = localStorage.getItem('wa_notif_template') || "Halo {nama}, perangkat {device} Anda sudah *{status}*. Silakan ambil di toko kami. Terima kasih 🙏\n\n{nota_id}";
             document.getElementById('waNotifTemplate').value = waNotifTemplate;
             let f = JSON.parse(localStorage.getItem('footers_settings')||'{}'); footers = {...footers, ...f};
@@ -690,7 +690,7 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
             localStorage.setItem('wa_template', document.getElementById('templateText').value);
             localStorage.setItem('printer_size', document.getElementById('printerSize').value);
             autoWASelesai = document.getElementById('autoWASelesai').checked; autoWAAmbil = document.getElementById('autoWAAmbil').checked;
-            localStorage.setItem('auto_wa_selesai', autoWASelesai); localStorage.setItem('auto_wa_ambil', autoWAAmbil);
+            localStorage.setItem('auto_wa_selesai', autoWASelesai); localStorage.setItem('auto_wa_ambil', autoWAAmbil); localStorage.setItem('wa_app', document.getElementById('waApp').value);
             waNotifTemplate = document.getElementById('waNotifTemplate').value; localStorage.setItem('wa_notif_template', waNotifTemplate);
             footers = { terima: {text: document.getElementById('footerTerimaText').value, enabled: document.getElementById('footerTerimaEnabled').checked}, diagnosa: {text: document.getElementById('footerDiagnosaText').value, enabled: document.getElementById('footerDiagnosaEnabled').checked}, selesai: {text: document.getElementById('footerSelesaiText').value, enabled: document.getElementById('footerSelesaiEnabled').checked}, ambil: {text: document.getElementById('footerAmbilText').value, enabled: document.getElementById('footerAmbilEnabled').checked} };
             localStorage.setItem('footers_settings', JSON.stringify(footers));
