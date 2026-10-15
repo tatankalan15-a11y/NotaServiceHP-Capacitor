@@ -29,6 +29,7 @@ public class WhatsAppSharePlugin extends Plugin {
         String uriStr = call.getString("uri");
         String phone = call.getString("phone");
         String text = call.getString("text");
+        String pkgPref = call.getString("pkg");
         if (uriStr == null || phone == null) {
             call.reject("uri dan phone wajib diisi");
             return;
@@ -51,6 +52,8 @@ public class WhatsAppSharePlugin extends Plugin {
             Uri contentUri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", file);
 
             String[] packages = {"com.whatsapp", "com.whatsapp.w4b"};
+            if ("com.whatsapp.w4b".equals(pkgPref)) packages = new String[]{"com.whatsapp.w4b"};
+            else if ("com.whatsapp".equals(pkgPref)) packages = new String[]{"com.whatsapp"};
             for (String pkg : packages) {
                 Intent intent = new Intent(Intent.ACTION_SEND);
                 intent.setType("image/jpeg");
