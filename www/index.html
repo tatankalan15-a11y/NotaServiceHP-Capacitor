@@ -181,8 +181,8 @@
             </div>
             <div class="form-group">
                 <label>Nomor HP / WhatsApp <small>(opsional)</small></label>
-                <input type="tel" id="nohp" placeholder="08xxxxxxxxxx" oninput="app.cleanPhoneInput(this)" onblur="app.validatePhone()">
-                <div class="validation-msg" id="phoneValidation">Format nomor tidak valid.</div>
+                <input type="tel" id="nohp" placeholder="08xx atau +62 8xx" oninput="app.cleanPhoneInput(this)" onblur="app.validatePhone()">
+                <div class="validation-msg" id="phoneValidation">Format nomor tidak valid. Contoh: 0895xxxxxxxx atau +62 895-xxxx-xxxx</div>
             </div>
             <div class="row">
                 <div class="form-group"><label>Merek HP *</label><input type="text" id="merek" list="listMerek" autocapitalize="words" required><datalist id="listMerek"><option>Samsung</option><option>iPhone</option><option>Xiaomi</option><option>OPPO</option><option>Vivo</option></datalist><div class="validation-msg" id="merekError"></div></div>
@@ -286,6 +286,7 @@
         <div><label>Template WhatsApp (Teks Nota)</label><textarea id="templateText" rows="4" placeholder="Gunakan {nama}, {device}, {nota_id}, {biaya}, {status}, {tanggal}, {toko}, {footer}"></textarea></div>
         <div><label>Syarat & Ketentuan</label><textarea id="skText" rows="5" placeholder="• Resiko kehilangan data bukan tanggung jawab kami.\n• Barang tidak diambil dalam 30 hari dianggap hangus.\n• Garansi hanya berlaku pada sparepart yang diganti."></textarea></div>
         <div><label>Backup & Restore</label><button class="btn-secondary" onclick="app.backupData()">📥 Backup JSON</button><div class="file-input-wrapper"><input type="file" id="restoreInput" accept=".json" onchange="app.restoreData(event)" style="display:none;"><label for="restoreInput" class="btn-secondary" style="display:block; text-align:center;">📤 Restore</label></div><button class="btn-secondary" onclick="app.clearAllData()" style="color:#c62828;">⚠️ Hapus Semua Data</button></div>
+        <div class="form-group"><label>Aplikasi WhatsApp untuk kirim gambar</label><select id="waApp"><option value="auto">Otomatis (WhatsApp biasa, jika tidak ada pakai Business)</option><option value="com.whatsapp.w4b">WhatsApp Business</option><option value="com.whatsapp">WhatsApp biasa</option></select></div>
         <button class="btn-primary" onclick="app.saveSettings()">💾 Simpan Pengaturan</button>
         <button class="btn-secondary" onclick="app.backToForm()">← Kembali</button>
     </div>
