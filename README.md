@@ -87,7 +87,7 @@ Menu Riwayat > **📈 Laporan & Pembukuan**. Periode bisa **Harian / Bulanan / T
 
 Versi kerja ini menambahkan modul lokal berikut:
 
-- **Buku pembayaran terpisah**: tanggal, ID servis, nominal, metode (Tunai/Transfer/QRIS/Lain-lain), pembayaran masuk/refund, dan transaksi pembalik untuk koreksi. Pembayaran manual masuk ke buku kas dan perhitungan sisa tagihan apabila `serviceId` cocok dengan ID servis yang tercatat.
+- **Buku pembayaran terpisah**: tanggal, ID servis, nominal, metode (Tunai/Transfer/QRIS/Lain-lain), pembayaran masuk/refund, dan transaksi pembalik untuk koreksi. Pembayaran manual **bersifat tambahan** di atas DP & pelunasan yang sudah tercatat di nota (misalnya pelanggan melunasi kurang bayar, refund, koreksi) dan masuk ke buku kas serta perhitungan sisa tagihan apabila `serviceId` cocok. Jangan memasukkan ulang DP/pelunasan yang sudah ada di nota.
 - **Saldo awal** per Tunai, Transfer, QRIS, dan Lain-lain. Nilai disimpan lokal dan ikut backup.
 - **Persediaan sparepart**: kini berupa modul lengkap, lihat bagian *Manajemen Sparepart (v15)* di bawah.
 - **Audit log** untuk simpan/perbarui nota, pembayaran, koreksi pembayaran, perubahan saldo awal, stok, pengeluaran, dan gabung backup.
@@ -150,3 +150,23 @@ Nota dicetak langsung ke printer thermal **tanpa aplikasi perantara** (tidak per
 - **Izin**: Android 12+ meminta izin *Perangkat sekitar* (Bluetooth) saat pertama kali.
 - **Batasan**: belum mendukung printer **BLE-only** (tanpa SPP), printer **USB**, cetak logo/gambar, dan karakter non-ASCII (diganti `?`; aksen dihilangkan).
 - **Bila cetakan terpotong/acak**: sesuaikan `CHUNK_SIZE`, `CHUNK_DELAY_MS`, `MIN_FLUSH_WAIT_MS` di `EscPosPrinterPlugin.java`. Bila printer tidak punya pemotong, perintah potong diabaikan dan kertas hanya maju 4 baris.
+
+## Perbaikan pembukuan (v18)
+- **Kas tidak lagi berkurang saat ada pembayaran manual.** Sebelumnya, satu saja pembayaran manual untuk sebuah servis membuat DP dan pelunasan dari nota servis itu hilang dari buku kas. Kini DP/pelunasan nota selalu dihitung, dan pembayaran manual ditambahkan di atasnya.
+  - **Penting bila sudah ada data lama:** jika Anda pernah menginput pembayaran manual yang menyalin DP/pelunasan nota, nominal itu kini terhitung dua kali. Batalkan lewat tombol ↩️ di Keuangan Lanjutan.
+- **Kurang bayar saat ambil (piutang).** Nota Ambil dan Servis Langsung punya kolom *Kurang bayar saat diambil*. Pelunasan di kas hanya sebesar yang benar-benar dibayar; sisanya tercatat sebagai **piutang** (kartu di Laporan, daftar di Keuangan Lanjutan, kolom di CSV). Saat pelanggan melunasi, catat sebagai pembayaran manual dengan ID servis yang sama; piutang berkurang otomatis. Omzet/laba tetap diakui saat barang diambil.
+- Logika kas/piutang ada di `src/finance.js` (modul murni, sudah diuji di Node).
+
+## Perbaikan tampilan nota pelanggan (v19)
+- **Estimasi waktu** (mis. "1-2 hari") kini tampil di nota Terima/Diagnosa, juga di cetak thermal.
+- **Cap status bayar**: nota Ambil, Servis Langsung, dan Penjualan menampilkan **LUNAS** atau **BELUM LUNAS + jumlah kurang bayar** (juga di thermal). Baris "Dibayar saat ambil" selalu tampil bila ada DP/kurang bayar.
+- Nota Terima/Diagnosa memakai label **Estimasi Sisa** (bukan "Sisa Pembayaran") karena angkanya masih estimasi.
+- Judul **Syarat & Ketentuan** dipisah dari poin pertama; huruf dibesarkan ke 11px agar terbaca.
+- Watermark tetap "SERVICE HP" dihapus (bukan nama toko dan menimpa teks di gambar WhatsApp).
+- Timeline tanpa detik dan tidak patah baris.
+
+## Perbaikan akses sparepart & keandalan simpan nota (v20)
+- Tombol **📦 Sparepart** kini ada di header halaman utama (sebelumnya hanya di bagian bawah layar Riwayat).
+- **Simpan nota yang gagal tidak lagi tampak berhasil**: bila database menolak menyimpan, form tetap terbuka (data tidak hilang) dan muncul pesan `❌ Nota GAGAL disimpan: <alasan>`.
+- `window.app` dipasang sebelum inisialisasi database; bila init gagal, tombol tetap hidup dan muncul pesan `⚠️ Gagal memuat data: <alasan>` (sebelumnya semua tombol mati tanpa keterangan).
+- Pesan galat pada `buatPreview` kini menampilkan penyebab aslinya.
