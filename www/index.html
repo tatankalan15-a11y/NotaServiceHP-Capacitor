@@ -53,7 +53,6 @@
         .btn-secondary { width: 100%; padding: 14px; border: 2px solid var(--border); border-radius: 12px; background: var(--card-bg); color: #666; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; }
         .nota-paper { background: white; border-radius: 15px; padding: 25px; margin-bottom: 20px; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: #333; transition: padding 0.2s; overflow: hidden; width: 100%; font-size: 12px; }
         .nota-paper::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 2px, transparent 2px, transparent 8px); pointer-events: none; z-index: 0; }
-        .nota-paper::after { content: "SERVICE HP"; position: absolute; bottom: 20px; right: 20px; font-size: 40px; font-weight: bold; color: rgba(0,0,0,0.05); transform: rotate(-15deg); pointer-events: none; z-index: 0; white-space: pre; }
         .nota-paper.terima { border: 3px solid var(--warning); background: linear-gradient(to bottom, #fff8e1 0%, #ffffff 100%); }
         .nota-paper.diagnosa { border: 3px solid #2196f3; background: linear-gradient(to bottom, #e3f2fd 0%, #ffffff 100%); }
         .nota-paper.selesai { border: 3px solid var(--info); background: linear-gradient(to bottom, #e0f7fa 0%, #ffffff 100%); }
@@ -78,8 +77,12 @@
         .nota-label { color: #666; font-weight: 500; }
         .nota-value { color: #333; font-weight: 600; text-align: right; max-width: 60%; word-break: break-word; }
         .nota-total { background: #f8f9fa; padding: 15px; border-radius: 10px; border: 2px solid #dee2e6; }
+        .nota-lunas { margin-top: 10px; padding: 10px; border-radius: 8px; text-align: center; font-weight: 800; font-size: 15px; letter-spacing: 1px; }
+        .nota-lunas small { display: block; margin-top: 3px; font-size: 12px; font-weight: 700; letter-spacing: 0; }
+        .nota-lunas.lunas { background: #e8f5e9; color: #2e7d32; border: 2px solid #4caf50; }
+        .nota-lunas.belum { background: #fff3e0; color: #e65100; border: 2px solid #ff9800; }
         .nota-footer { margin-top: 25px; padding-top: 15px; border-top: 1px dashed #dee2e6; text-align: center; font-size: 11px; color: #333; }
-        .syarat-section { margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 8px; font-size: 10px; color: #666; text-align: left; border-left: 3px solid var(--primary); }
+        .syarat-section { margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 8px; font-size: 11px; line-height: 1.45; color: #555; text-align: left; border-left: 3px solid var(--primary); }
         .action-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 15px; }
         .btn-action { padding: 12px; border: none; border-radius: 12px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: white; transition: all 0.3s; text-align: center; }
         .btn-wa-text { background: linear-gradient(135deg, #25d366 0%, #128c7e 100%); }
@@ -153,6 +156,7 @@
         <div class="slogan" id="tokoSloganDisplay"></div>
         <p>Sistem Manajemen Service Profesional</p>
         <div class="header-controls">
+            <button class="btn-icon" onclick="app.spOpen()">📦 Sparepart</button>
             <button class="btn-icon" onclick="app.showHistory()">📋 Riwayat</button>
             <button class="btn-icon" onclick="app.showSettings()">⚙️ Pengaturan</button>
             <button class="btn-icon" onclick="app.toggleDarkMode()">🌙 Mode</button>
@@ -230,6 +234,7 @@
                 <div class="form-group"><label>Modal Sparepart (Rp) <small>- untuk hitung laba</small></label><input type="number" id="modal" min="0" step="1000"></div>
                 <div class="form-group"><label>Metode Bayar</label><select id="metodeBayar"><option value="Tunai">Tunai</option><option value="Transfer">Transfer</option><option value="QRIS">QRIS</option></select></div>
                 <div class="form-group"><label>Sisa (Rp)</label><input type="text" id="sisa" readonly style="background:#f0f0f0;"></div>
+                <div class="form-group"><label>Kurang bayar saat diambil (Rp) <small>- isi bila pelanggan belum melunasi; tercatat sebagai piutang</small></label><input type="number" id="kurangBayar" min="0" step="1000" value="0"></div>
             </div>
             <div class="form-group"><label>Estimasi Waktu</label><input type="text" id="estimasi" placeholder="1-2 hari"></div>
             <div class="form-group"><label>Catatan Tambahan</label><input type="text" id="catatan"></div>
